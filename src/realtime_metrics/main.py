@@ -3,10 +3,10 @@ import sys
 from optparse import OptionParser
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
-from sqlalchemy import create_engine, inspect, Row
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
-from typing import Tuple
+import pandas as pd
 
 if __name__ == "__main__":
     option_parser = OptionParser()
@@ -49,42 +49,44 @@ if __name__ == "__main__":
         if not inspector.has_table(table):
             logging.error('Missing table %s! Use gtfsrdb.py -c to create it.', table)
             exit(1)
-        print("Table %s exists" % table)
+        logger.debug("Table %s exists" % table)
 
-    print("Successfully connected to database")
+    logger.info("Successfully connected to database")
 
     trips = session.query(TripUpdate).group_by(TripUpdate.trip_id).all()
 
-    for trip in trips:
-        print("Trip ID: ", trip.trip_id)
-        print("Vehicle ID: ", trip.vehicle_id)
+    data = []
 
-        trip_updates = session.query(TripUpdate).filter(TripUpdate.trip_id == trip.trip_id).all()
+    for trip in trips:
+        logger.warning("Trip ID: %s", trip.trip_id)
+        logger.warning("Vehicle ID: %s", trip.vehicle_id)
+
         stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == trip.trip_id).all()
 
         if len(stop_time_updates) <= 1:
-            print(f"Trip {trip.trip_id} has no stop time updates")
-            print("")
-            print("=====================================")
+            logger.info(f"Trip {trip.trip_id} has no stop time updates")
+            logger.info("")
+            logger.info("=====================================")
             continue
 
         total_arrival_delay = 0
 
         for i in range(1, len(stop_time_updates) - 1):
 
-            stop_time_update = stop_time_updates[i]
+            stop_time_update: StopTimeUpdate = stop_time_updates[i].StopTimeUpdate
+            trip_update: TripUpdate = stop_time_updates[i].TripUpdate
 
-            # print("Stop ID: ", stop_time_update.StopTimeUpdate.stop_id)
-            # print("Stop sequence: ", stop_time_update.StopTimeUpdate.stop_sequence)
-            # print("Arrival delay: ", stop_time_update.StopTimeUpdate.arrival_delay)
-            # print("Arrival uncertainty: ", stop_time_update.StopTimeUpdate.arrival_uncertainty)
-            # print("TimeStamp: ", stop_time_update.TripUpdate.timestamp)
-            # print("")
-            # print("================================")
+            logger.debug("Stop ID: %s", stop_time_update.stop_id)
+            logger.debug("Stop sequence: %s", stop_time_update.stop_sequence)
+            logger.debug("Arrival delay: %s", stop_time_update.arrival_delay)
+            logger.debug("Arrival uncertainty: %s", stop_time_update.arrival_uncertainty)
+            logger.debug("TimeStamp: %s", trip_update.timestamp)
+            logger.debug("")
+            logger.debug("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
 
-            total_arrival_delay += stop_time_update.StopTimeUpdate.arrival_delay
+            total_arrival_delay += stop_time_update.arrival_delay
 
-        last = stop_time_updates[-1].StopTimeUpdate
+        last: StopTimeUpdate = stop_time_updates[-1].StopTimeUpdate
         #last.arrival_delay = 0
 
         # TODO: Remove the trip if we know it is ongoing
@@ -94,11 +96,20 @@ if __name__ == "__main__":
         average_arrival_delay = total_arrival_delay / len(stop_time_updates) - 1
         real_difference = last.arrival_time - average_arrival_delay
 
-        print("Total number of stop time updates: ", len(stop_time_updates))
-        print("Average arrival delay: ", average_arrival_delay)
-        print("Real difference: ", real_difference)
-        print("")
-        print("=====================================")
+        # add to dataframe
+        data.append({
+            'trip_id': trip.trip_id,
+            'avg_delay_difference': average_arrival_delay,
+            'real_difference': real_difference
+        })
 
-        exit(0)
+        logger.warning("Total number of stop time updates: %d", len(stop_time_updates))
+        logger.warning("Average arrival delay: %f", average_arrival_delay)
+        logger.warning("Real difference: %f", real_difference)
+        logger.warning("")
+        logger.warning("=====================================")
+
+    df = pd.DataFrame(data)
+    logger.warning(df)
+    df.to_csv('metrics.csv')
 
