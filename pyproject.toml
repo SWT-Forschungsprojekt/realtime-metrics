@@ -15,7 +15,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-     "GTFSrDB @ git+https://github.com/public-transport/gtfsrdb@packaging"
+     "GTFSrDB @ git+https://github.com/public-transport/gtfsrdb"
 ]
 
 
