@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realtime_metrics"
+dynamic = ["version"]
+authors = []
+description = "Evaluate recorded GTFS-RT data"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+     "GTFSrDB @ git+https://github.com/public-transport/gtfsrdb"
+]
+
+
+[project.urls]
+Homepage = "https://github.com/SWT-Forschungsprojekt/realtime-metrics"
+Issues = "https://github.com/SWT-Forschungsprojekt/realtime-metrics/issues"
