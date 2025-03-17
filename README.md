@@ -25,6 +25,7 @@ Now install `realtime-metrics` package:
 > Therefore they cannot work in the same environment at the same time
 
 ```shell
+pip uninstall sqlalchemy
 pip install -e .
 ```
 
