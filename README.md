@@ -3,13 +3,8 @@ Evaluate recorded GTFS-RT data
 
 ## Example usage
 
-Install the package:
+[GTFSDB](https://github.com/OpenTransitTools/gtfsdb) (to load the dataset into the db) is needed:
 
-```shell
-pip install -e .
-```
-
-This does also install [gtfsrdb](https://github.com/public-transport/gtfsrdb). [GTFSDB](https://github.com/OpenTransitTools/gtfsdb) (to load the dataset into the db) is additionally needed:
 
 ```shell
 pip install git+https://github.com/1Maxnet1/gtfsdb.git@patch-1 setuptools # workaround until dependency issues are resolved upstream
@@ -21,6 +16,18 @@ Now one download a GTFS dataset and load it into the database:
 wget -O BUCHAREST-REGION.zip https://gtfs.tpbi.ro/regional/BUCHAREST-REGION.zip
 gtfsdb-load --database_url sqlite:///example.db BUCHAREST-REGION.zip
 ```
+
+Now install `realtime-metrics` package:
+
+> [!NOTE]  
+> Currently GTFSdb works only with SQLAlchemy version 1.x, while realtime-metrics requires SQLAlchemy version 2.x
+> Therefore they cannot work in the same environment at the same time
+
+```shell
+pip install -e .
+```
+
+This does also install [gtfsrdb](https://github.com/public-transport/gtfsrdb). 
 
 Afterwards, use gtfsrdb to collect some realtime data:
 
