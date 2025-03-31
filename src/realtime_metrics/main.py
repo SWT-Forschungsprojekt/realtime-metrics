@@ -81,7 +81,7 @@ def run_analysis():
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
 
     for tripUpdate in tripUpdates:
-        trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).all()
+        trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).all()
         for trip_stop_time_update in trip_stop_time_updates:
             stop_time_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
@@ -93,19 +93,20 @@ def run_analysis():
                     dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
             else:
                 dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
-        #break
 
     # compute accuracy metric
-    print("")
-    print("MSE accuracy: ")
+    logger.info("MSE accuracy: ")
     mse_accuracy(stop_time_updates=stop_time_updates)
-    print("")
-    print("ETA accuracy:")
+    logger.info("ETA accuracy:")
     eta_accuracy(stop_time_updates=stop_time_updates)
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     # computes the accuracy of the given stop time updates using mean squared error
+
+    if len(samples) <= 0:
+        logger.info("No samples provided!")
+        return
 
     # compute prediction error for each stop time update
     samples = []
@@ -124,7 +125,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     mean_squared_error = sum / len(samples)
 
     # print MSE
-    print("MSE: ", mean_squared_error)
+    logger.info("MSE: ", mean_squared_error)
 
 
 def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
@@ -189,7 +190,7 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         
         buckets[bucket_index] = bucket
 
-    print("buckets: ", buckets)
+    logger.debug("buckets: ", buckets)
 
     # compute accuracy in each bucket
     accuracies = []
@@ -203,10 +204,10 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
 
     # compute total accuracy
     if len(accuracies) == 0:
-        print("No data provided!")
+        logger.info("No data provided!")
         return
     mean_accuracy = numpy.mean(accuracies) * 100
-    print(f"ETA accuracy: {mean_accuracy}%")
+    logger.info(f"ETA accuracy: {mean_accuracy}%")
 
 
 def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
