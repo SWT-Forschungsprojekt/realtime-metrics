@@ -59,7 +59,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     mean_squared_error = sum / len(samples)
 
     # print MSE
-    logger.info("MSE: ", mean_squared_error)
+    logger.info("MSE: %s", mean_squared_error)
 
 
 def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
@@ -124,7 +124,7 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         
         buckets[bucket_index] = bucket
 
-    logger.debug("buckets: ", buckets)
+    logger.debug("buckets: %s", buckets)
 
     # compute accuracy in each bucket
     accuracies = []
