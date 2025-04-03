@@ -38,7 +38,7 @@ def run_analysis():
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     # computes the accuracy of the given stop time updates using mean squared error
 
-    if len(samples) <= 0:
+    if len(stop_time_updates) <= 0:
         logger.info("No samples provided!")
         return
 
