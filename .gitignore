@@ -172,3 +172,7 @@ cython_debug/
 
 # SQLite database files
 *.db
+*.db-journal
+
+# GTFS datasets
+*.zip
