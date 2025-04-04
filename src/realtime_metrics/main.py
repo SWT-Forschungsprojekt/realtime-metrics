@@ -9,7 +9,9 @@ from sqlalchemy.orm import sessionmaker
 import numpy
 
 def run_analysis():
-    # get all stop time updates and run compute the different metrics
+    """
+    get all stop time updates and run compute the different metrics
+    """
     tripUpdates = session.query(TripUpdate).group_by(TripUpdate.trip_id).all()
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
@@ -19,7 +21,7 @@ def run_analysis():
         for trip_stop_time_update in trip_stop_time_updates:
             stop_time_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
-            # check dict
+            # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
             key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
             if key in dictionary.keys():
@@ -28,7 +30,6 @@ def run_analysis():
             else:
                 dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
-    # compute accuracy metric
     logger.info("MSE accuracy: ")
     mse_accuracy(stop_time_updates=stop_time_updates)
     logger.info("ETA accuracy:")
@@ -36,7 +37,9 @@ def run_analysis():
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
-    # computes the accuracy of the given stop time updates using mean squared error
+    """
+    computes the accuracy of the given stop time updates using mean squared error
+    """
 
     if len(stop_time_updates) <= 0:
         logger.info("No samples provided!")
@@ -59,11 +62,13 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     mean_squared_error = sum / len(samples)
 
     # print MSE
-    logger.info("MSE: %s", mean_squared_error)
+    return mean_squared_error
 
 
 def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
-    # computes the accuracy of the given stop time updates using the eta bucketing approach
+    """
+    computes the accuracy of the given stop time updates using the eta bucketing approach
+    """
 
     # initialize buckets with zero correct and incorrect samples each
     buckets: list[list] = []
@@ -141,12 +146,13 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         logger.info("No data provided!")
         return
     mean_accuracy = numpy.mean(accuracies) * 100
-    logger.info(f"ETA accuracy: {mean_accuracy}%")
+    return mean_accuracy
 
 
+"""
+returns the actual delay for the route and stop of the given TripUpdate
+"""
 def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
-    # return the actual delay for the route and stop of the given TripUpdate
-    #return -numpy.random.randint(-90, 270)
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
     newest_stop_time_update: StopTimeUpdate = dictionary[key][1]
     return newest_stop_time_update.arrival_delay
