@@ -1,6 +1,7 @@
 import logging
 import sys
 from optparse import OptionParser
+from typing import Dict
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
 from sqlalchemy import create_engine, inspect
@@ -10,7 +11,7 @@ import numpy
 
 def run_analysis():
     """
-    get all stop time updates and run compute the different metrics
+    get all stop time updates and compute the different metrics
     """
     tripUpdates = session.query(TripUpdate).group_by(TripUpdate.trip_id).all()
 
@@ -30,10 +31,10 @@ def run_analysis():
             else:
                 dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
-    logger.info("MSE accuracy: ")
-    mse_accuracy(stop_time_updates=stop_time_updates)
-    logger.info("ETA accuracy:")
-    eta_accuracy(stop_time_updates=stop_time_updates)
+    mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
+    print("MSE accuracy: ", mse_accuracy_result)
+    eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
+    print("ETA accuracy: ", eta_accuracy_result)
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
@@ -112,13 +113,11 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
             lower_limit = -90
         else: 
             # too far in the past
-            #print("Stop Time Update is outside the allowed interval.")
             continue
 
         # check if inside allowed interval
         actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
         predicted_delay = stop_time_update.arrival_delay
-        # TODO: fix calculation
         difference =  predicted_delay - actual_delay
 
         bucket = buckets[bucket_index]
@@ -129,7 +128,7 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         
         buckets[bucket_index] = bucket
 
-    logger.debug("buckets: %s", buckets)
+    logger.debug("ETA buckets: %s", buckets)
 
     # compute accuracy in each bucket
     accuracies = []
@@ -149,17 +148,19 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     return mean_accuracy
 
 
-"""
-returns the actual delay for the route and stop of the given TripUpdate
-"""
 def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
+    """
+    returns the actual delay for the route and stop of the given TripUpdate
+    """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
     newest_stop_time_update: StopTimeUpdate = dictionary[key][1]
     return newest_stop_time_update.arrival_delay
 
 
 def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
-    # return the actual arrival time for the route and stop of the given TripUpdate
+    """
+    return the actual arrival time for the route and stop of the given TripUpdate
+    """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
     newest_stop_time_update: StopTimeUpdate = dictionary[key][1]
     return newest_stop_time_update.arrival_time
@@ -201,8 +202,7 @@ if __name__ == "__main__":
     session = sessionmaker(bind=engine)()
 
     # dict for newest stop time update
-    #dictionary: Dict[(str, str, str), (int, StopTimeUpdate)] = dict()
-    dictionary = dict()
+    dictionary: Dict[tuple[str, str, str], tuple[int, StopTimeUpdate]] = dict()
 
     # Check if it has the tables
     # Base from model.py
