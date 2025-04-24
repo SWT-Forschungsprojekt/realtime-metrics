@@ -17,8 +17,21 @@ def run_analysis():
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
 
+    trips: Dict[tuple[str, str, str], list[TripUpdate]]  = dict()
+
+    time_frame_start = sys.maxsize
+    time_frame_end = 0
+
     for tripUpdate in tripUpdates:
         trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).all()
+
+        # update time range
+        time_in_minutes = int(tripUpdate.timestamp.timestamp() / 60)
+        if time_in_minutes < time_frame_start:
+            time_frame_start = time_in_minutes
+        if time_in_minutes > time_frame_end:
+            time_frame_end = time_in_minutes
+
         for trip_stop_time_update in trip_stop_time_updates:
             stop_time_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
@@ -31,10 +44,29 @@ def run_analysis():
             else:
                 dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
+            # add stop time update to trips
+            if key in trips.keys():
+                trip_updates: list[TripUpdate] = trips[key]
+            else:
+                trip_updates: list[TripUpdate] = []
+            trip_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
+            trips[key] = trip_updates
+
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     print("MSE accuracy: ", mse_accuracy_result)
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     print("ETA accuracy: ", eta_accuracy_result)
+
+    availabilities = []
+    
+    for trip_id in trips.keys():
+        trip_updates = trips[trip_id]
+        trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
+        availabilities.append(trip_availability)
+
+    availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
+
+    print("Availability of acceptable stop time updates: ", availability_acceptable_stop_time_updates_result)
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
@@ -146,6 +178,57 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         return
     mean_accuracy = numpy.mean(accuracies) * 100
     return mean_accuracy
+
+
+def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]], 
+                                              time_frame_start: int, 
+                                              time_frame_end: int):
+    """
+    Computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    It computes the percentage of one minute slots with two or more updates.
+
+    Parameters:
+    stop_time_updates: list of corresponding trip updates and stop time updates
+    time_frame_start: start of the time frame to observe, in minutes since 1970
+    time_frame_end: end of the time frame to observe, in minutes since 1970
+
+    Returns:
+    A float containing the percentage of one minute slots with two or more updates.
+    """
+    logger.info("Time frame start: %s", time_frame_start)
+    logger.info("Time frame end: %s", time_frame_end)
+
+    # dict to store how many stop time updates are available for each minute slot
+    time_slots: Dict[int, int] = dict()
+
+    for update in stop_time_updates:
+        trip_update = update[0]
+
+        # get time in minutes
+        time_in_minutes = int(trip_update.timestamp.timestamp() / 60)
+
+        # skip, if outide of time frame
+        if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
+            continue
+
+        # increase respective stop time counter
+        if time_in_minutes not in time_slots.keys():
+            time_slots[time_in_minutes] = 1
+        else:
+            time_slots[time_in_minutes] = time_slots[time_in_minutes] + 1
+
+    # calculate percentage of minutes with two or more stop time updates
+    number_of_time_slots = time_frame_end - time_frame_start + 1
+    logger.info("Time slots: %s", number_of_time_slots)
+
+    time_slots_with_enough_updates = 0
+    for key in time_slots.keys():
+        if time_slots[key] >= 2:
+            time_slots_with_enough_updates += 1
+    logger.info("Time slots with enough updates: %s", time_slots_with_enough_updates)
+
+    return (time_slots_with_enough_updates / number_of_time_slots) * 100
 
 
 def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
