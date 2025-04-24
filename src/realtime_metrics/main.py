@@ -44,7 +44,7 @@ def run_analysis():
             else:
                 dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
-            # add stop time update to trips_dict
+            # add stop time update to trips
             if key in trips.keys():
                 trip_updates: list[TripUpdate] = trips[key]
             else:

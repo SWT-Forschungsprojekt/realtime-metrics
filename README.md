@@ -6,7 +6,6 @@ Evaluate recorded GTFS-RT data
 
 [GTFSDB](https://github.com/OpenTransitTools/gtfsdb) (to load the dataset into the db) is needed:
 
-
 ```shell
 pip install git+https://github.com/1Maxnet1/gtfsdb.git@patch-1 setuptools # workaround until dependency issues are resolved upstream
 ```
@@ -29,7 +28,7 @@ pip uninstall sqlalchemy
 pip install -e .
 ```
 
-This does also install [gtfsrdb](https://github.com/public-transport/gtfsrdb). 
+This does also install [gtfsrdb](https://github.com/public-transport/gtfsrdb).
 
 Afterwards, use gtfsrdb to collect some realtime data:
 
