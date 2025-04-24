@@ -2,6 +2,7 @@ import logging
 import sys
 from optparse import OptionParser
 from typing import Dict
+from datetime import datetime, timedelta
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
 from sqlalchemy import create_engine, inspect
@@ -17,56 +18,27 @@ def run_analysis():
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
 
-    trips_dict: Dict[tuple[str, str, str], list[TripUpdate]]  = dict()
-
-    time_frame_start = sys.maxsize
-    time_frame_end = 0
-
     for tripUpdate in tripUpdates:
-        trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).all()
-
-        # update time range
-        time_in_minutes = int(tripUpdate.timestamp.timestamp() / 60)
-        if time_in_minutes < time_frame_start:
-            time_frame_start = time_in_minutes
-        if time_in_minutes > time_frame_end:
-            time_frame_end = time_in_minutes
-
+        trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).order_by(TripUpdate.route_id.desc(), TripUpdate.trip_id.desc(), StopTimeUpdate.stop_id.desc()).all()
         for trip_stop_time_update in trip_stop_time_updates:
             stop_time_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
             # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
             key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
-            if key in dictionary.keys():
-                if tripUpdate.timestamp.timestamp() > dictionary[key][0]:
-                    dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
+            if key in actual_arrival_times.keys():
+                if tripUpdate.timestamp.timestamp() > actual_arrival_times[key][0]:
+                    actual_arrival_times[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
             else:
-                dictionary[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
-
-            # add stop time update to trips_dict
-            if key in trips_dict.keys():
-                trip_list: list[TripUpdate] = trips_dict[key]
-            else:
-                trip_list: list[TripUpdate] = []
-            trip_list.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
-            trips_dict[key] = trip_list
+                actual_arrival_times[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     print("MSE accuracy: ", mse_accuracy_result)
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     print("ETA accuracy: ", eta_accuracy_result)
 
-    availabilities = []
-    
-    for trip_id in trips_dict.keys():
-        trip_list = trips_dict[trip_id]
-        trip_availability = availability_acceptable_stop_time_updates(trip_list, time_frame_start, time_frame_end)
-        availabilities.append(trip_availability)
-
-    availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
-
-    print("Availability of acceptable stop time updates: ", availability_acceptable_stop_time_updates_result)
+    experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
+    print("Experienced Wait Time Delay: ", experienced_wait_time_delay_result)
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
@@ -180,58 +152,12 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     return mean_accuracy
 
 
-def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]], 
-                                              time_frame_start: int, 
-                                              time_frame_end: int):
-    """
-    computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
-    stop_time_updates: list of corresponding trip updates and stop time updates
-    time_frame_start: start of the time frame to observe, in minutes since 1970
-    time_frame_end: end of the time frame to observe, in minutes since 1970
-    """
-    logger.info("Time frame start: %s", time_frame_start)
-    logger.info("Time frame end: %s", time_frame_end)
-
-    # dict to store how many stop time updates are available for each minute slot
-    time_slots_dict: Dict[int, int] = dict()
-
-    for update in stop_time_updates:
-        trip_update = update[0]
-
-        # get time in minutes
-        time_in_minutes = int(trip_update.timestamp.timestamp() / 60)
-
-        # skip, if outide of time frame
-        if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
-            continue
-
-        # increase respective stop time counter
-        if time_in_minutes not in time_slots_dict.keys():
-            time_slots_dict[time_in_minutes] = 1
-        else:
-            time_slots_dict[time_in_minutes] = time_slots_dict[time_in_minutes] + 1
-
-    # calculate percentage of minutes with two or more stop time updates
-    time_slots = time_frame_end - time_frame_start + 1
-    logger.info("Time slots: %s", time_slots)
-
-    time_slots_with_two_entries = 0
-    for key in time_slots_dict.keys():
-        if time_slots_dict[key] >= 2:
-            time_slots_with_two_entries += 1
-    logger.info("Time slots with at least two updates: %s", time_slots_with_two_entries)
-
-    percentage = (time_slots_with_two_entries / time_slots) * 100
-
-    return percentage
-
-
 def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
     """
     returns the actual delay for the route and stop of the given TripUpdate
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    newest_stop_time_update: StopTimeUpdate = dictionary[key][1]
+    newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
     return newest_stop_time_update.arrival_delay
 
 
@@ -240,8 +166,92 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
     return the actual arrival time for the route and stop of the given TripUpdate
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    newest_stop_time_update: StopTimeUpdate = dictionary[key][1]
+    newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
     return newest_stop_time_update.arrival_time
+
+
+def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
+    """
+    Computes the average Experienced Wait Time Delay.
+    """
+    logger.info("Calculating Experienced Wait Time Delay...")
+
+    delays = []
+
+    logger.info(trip_stop_time_updates)
+
+    indexed_updates: Dict[tuple[str, str], list[StopTimeUpdate]] = {}
+
+    for key in actual_arrival_times.keys():
+        logger.debug("Key: %s", key)
+        route_id, _, stop_id = key
+        
+        new_key = (route_id, stop_id)
+
+        indexed_updates[new_key] = []
+
+    for trip_stop_time_update in trip_stop_time_updates:
+        trip_update: TripUpdate = trip_stop_time_update[0]
+        stop_time_update: StopTimeUpdate = trip_stop_time_update[1]
+
+        route_id = trip_update.route_id
+        stop_id = stop_time_update.stop_id
+        new_key = (route_id, stop_id)
+
+        indexed_updates[new_key].append(stop_time_update)
+
+    logger.debug("Indexed updates: %s", indexed_updates)
+
+    for index_key, stop_updates in indexed_updates.items():
+        if len(stop_updates) < 2:
+            logger.debug("Not enough updates for %s", index_key)
+            continue
+        route_id, stop_id = index_key
+        # sort updates by arrival time
+        stop_updates.sort(key=lambda u: u.arrival_time)
+        logger.debug("Sorted updates for %s: %s", index_key, [datetime.fromtimestamp(u.arrival_time).strftime("%Y-%m-%d %H:%M:%S") for u in stop_updates])
+
+        # simulate a full day based on the days of arrival times in stop_updates
+        if not stop_updates:
+            logger.info("No stop updates available for simulation.")
+            return None
+
+        # Determine the range of days based on arrival times
+        min_arrival_time = stop_updates[0].arrival_time
+        max_arrival_time = stop_updates[-1].arrival_time
+        start_of_day = datetime.fromtimestamp(min_arrival_time).replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = datetime.fromtimestamp(max_arrival_time).replace(hour=23, minute=59, second=59, microsecond=0)
+
+        current_time = int(start_of_day.timestamp())
+        end_time = int(end_of_day.timestamp())
+
+        # TODO: check from here if this is correct
+        while current_time <= end_time:
+            # find the next predicted arrival time within 60 min
+            next_predicted = next((u.arrival_time for u in stop_updates if current_time <= u.arrival_time <= current_time + 3600), None)
+            if next_predicted is None:
+                current_time += 60  # Increment by 1 minute
+                continue  # No prediction available in the 60 min window
+
+            # find next experienced arrival at or after predicted
+            next_experienced = next((u.arrival_time for u in stop_updates if u.arrival_time >= next_predicted), None)
+            if next_experienced is None:
+                current_time += 60  # Increment by 1 minute
+                continue
+
+            delay = next_experienced - next_predicted
+            delays.append(delay)
+
+            # Move to the next minute after the current prediction
+            current_time = next_predicted + 60
+
+    if not delays:
+        logger.info("No delay samples found.")
+        return None
+
+    logger.info("Delays: %s", delays)    
+    average_delay = numpy.mean(delays)
+    return average_delay
 
 
 if __name__ == "__main__":
@@ -280,7 +290,7 @@ if __name__ == "__main__":
     session = sessionmaker(bind=engine)()
 
     # dict for newest stop time update
-    dictionary: Dict[tuple[str, str, str], tuple[int, StopTimeUpdate]] = dict()
+    actual_arrival_times: Dict[tuple[str, str, str], tuple[int, StopTimeUpdate]] = dict()
 
     # Check if it has the tables
     # Base from model.py
