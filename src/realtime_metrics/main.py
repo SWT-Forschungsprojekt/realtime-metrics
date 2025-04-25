@@ -26,16 +26,19 @@ def run_analysis():
             # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
             key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
+            if stop_time_update.arrival_uncertainty > 0:
+                continue
             if key in actual_arrival_times.keys():
                 if tripUpdate.timestamp.timestamp() > actual_arrival_times[key][0]:
                     actual_arrival_times[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
             else:
                 actual_arrival_times[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
 
-    #mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
-    #print("MSE accuracy: ", mse_accuracy_result)
-    #eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
-    #print("ETA accuracy: ", eta_accuracy_result)
+    mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
+    print("MSE accuracy: ", mse_accuracy_result)
+
+    eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
+    print("ETA accuracy: ", eta_accuracy_result)
 
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     print("Experienced Wait Time Delay: ", experienced_wait_time_delay_result)
@@ -198,6 +201,9 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
         stop_id = stop_time_update.stop_id
         new_key = (route_id, stop_id)
 
+        if new_key not in indexed_updates.keys():
+            continue
+
         indexed_updates[new_key].append((trip_update, stop_time_update))
 
     logger.debug("Indexed updates: %s", indexed_updates)
@@ -207,8 +213,8 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
             logger.debug("Not enough updates for %s", index_key)
             continue
         route_id, stop_id = index_key
-        # sort updates by arrival time
-        trip_stop_updates.sort(key=lambda u: u[0].timestamp)
+        # sort updates by published time
+        trip_stop_updates.sort(key=lambda u: u[0].timestamp.timestamp())
         logger.debug("Sorted updates for %s: %s", index_key, [datetime.fromtimestamp(update[0].timestamp.timestamp()).strftime("%Y-%m-%d %H:%M:%S") for update in trip_stop_updates])
 
         # Determine the range of days based on arrival times
@@ -239,8 +245,8 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
             delay = next_actual_arrival_time - next_predicted_arrival_time
             delays.append(delay)
 
-            # Move to the next minute after the current prediction
-            current_time = current_time + 60
+            # Move to the next minute
+            current_time += 60
 
     if not delays:
         logger.info("No delay samples found.")
@@ -252,13 +258,23 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
 
 
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
+    """
+    Returns the last stop time update in the given list, that what published before or at the given timestamp.
+    If no such stop time update is in the list, None is returned.
+    """
     updates_before_timestamp = [update for update in updates if update[0].timestamp.timestamp() <= timestamp]
-    if len(updates_before_timestamp) > 1:
-        return updates_before_timestamp[-1]
-    return None
+    if len(updates_before_timestamp) <= 0:
+        return None
+    latest_timestamp = updates_before_timestamp[-1][0].timestamp.timestamp()
+    updates_published_at_last_timestamp = [update for update in updates_before_timestamp if update[0].timestamp.timestamp() == latest_timestamp]
+    updates_published_at_last_timestamp.sort(key=lambda update: update[1].arrival_time)
+    return updates_published_at_last_timestamp[0]
 
 
 def get_next_actual_arrival(timestamp: int, route_id: int, stop_id: int) -> StopTimeUpdate | None:
+    """
+    Returns the stop time update containing the next actual arrival time for the given route and stop after the given timestamp.
+    """
     actual_arrivals: list[StopTimeUpdate] = []
     # collect all actual arrivals after the given timestamp
     for key, update in actual_arrival_times.items():
