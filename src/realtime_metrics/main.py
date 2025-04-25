@@ -64,7 +64,10 @@ def run_analysis():
         trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
         availabilities.append(trip_availability)
 
-    availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
+    if len(availabilities) == 0:
+        availability_acceptable_stop_time_updates_result = 0
+    else:
+        availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
 
     print("Availability of acceptable stop time updates: ", availability_acceptable_stop_time_updates_result)
 
