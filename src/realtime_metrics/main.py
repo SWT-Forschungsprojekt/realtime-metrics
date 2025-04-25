@@ -27,7 +27,7 @@ def run_analysis():
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
             key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
             if stop_time_update.arrival_uncertainty > 0:
-                continue
+                continue # only consider updates with arrival uncertainty 0 as actual arrivals
             if key in actual_arrival_times.keys():
                 if tripUpdate.timestamp.timestamp() > actual_arrival_times[key][0]:
                     actual_arrival_times[key] = (tripUpdate.timestamp.timestamp(), stop_time_update)
@@ -59,17 +59,21 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         trip_update = update[0]
         stop_time_update = update[1]
         actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
+        if not actual_delay:
+            continue # skip updates with unknown actual delay
         predicted_delay = stop_time_update.arrival_delay
         prediction_error = actual_delay - predicted_delay
         samples.append(prediction_error)
 
     # compute MSE
-    sum = 0
+    if len(samples) <= 0:
+        return 0
+    
+    sum = 0.0
     for entry in samples:
         sum += entry * entry
     mean_squared_error = sum / len(samples)
 
-    # print MSE
     return mean_squared_error
 
 
@@ -90,6 +94,8 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         trip_update = update[0]
         stop_time_update = update[1]
         actual_arrival_time = get_actual_arrival_time(trip_update=trip_update, stop_time_update=stop_time_update)
+        if not actual_arrival_time:
+            continue # skip updates with unknown actual arrival time
         time_variance = actual_arrival_time - trip_update.timestamp.timestamp()
 
         bucket_index = 0
@@ -124,6 +130,8 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
 
         # check if inside allowed interval
         actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
+        if not actual_delay:
+            continue # skip updates with unknown actual delay
         predicted_delay = stop_time_update.arrival_delay
         difference =  predicted_delay - actual_delay
 
@@ -150,25 +158,31 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     # compute total accuracy
     if len(accuracies) == 0:
         logger.info("No data provided!")
-        return
+        return 0.0
     mean_accuracy = numpy.mean(accuracies) * 100
     return mean_accuracy
 
 
-def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
+def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int | None:
     """
-    returns the actual delay for the route and stop of the given TripUpdate
+    Returns the actual delay for the route and stop of the given TripUpdate.
+    If no actual delay is known, None is returned.
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
+    if key not in actual_arrival_times.keys():
+        return None
     newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
     return newest_stop_time_update.arrival_delay
 
 
-def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int:
+def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int | None:
     """
-    return the actual arrival time for the route and stop of the given TripUpdate
+    Returns the actual arrival time for the route and stop of the given TripUpdate.
+    If no actual arrival time is known, None is returned.
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
+    if key not in actual_arrival_times.keys():
+        return None
     newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
     return newest_stop_time_update.arrival_time
 
