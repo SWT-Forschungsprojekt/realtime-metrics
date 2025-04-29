@@ -59,7 +59,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
         trip_update = update[0]
         stop_time_update = update[1]
         actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
-        if not actual_delay:
+        if actual_delay is None:
             continue # skip updates with unknown actual delay
         predicted_delay = stop_time_update.arrival_delay
         prediction_error = actual_delay - predicted_delay
@@ -67,6 +67,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
 
     # compute MSE
     if len(samples) <= 0:
+        logger.info("No data provided!")
         return 0
     
     sum = 0.0
@@ -88,13 +89,13 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     buckets.append([0,0])
     buckets.append([0,0])
     buckets.append([0,0])
-    
+
     # sort stop time updates into the correct buckets
     for update in stop_time_updates:
         trip_update = update[0]
         stop_time_update = update[1]
         actual_arrival_time = get_actual_arrival_time(trip_update=trip_update, stop_time_update=stop_time_update)
-        if not actual_arrival_time:
+        if actual_arrival_time is None:
             continue # skip updates with unknown actual arrival time
         time_variance = actual_arrival_time - trip_update.timestamp.timestamp()
 
@@ -130,7 +131,7 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
 
         # check if inside allowed interval
         actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
-        if not actual_delay:
+        if actual_delay is None:
             continue # skip updates with unknown actual delay
         predicted_delay = stop_time_update.arrival_delay
         difference =  predicted_delay - actual_delay
@@ -169,10 +170,11 @@ def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) 
     If no actual delay is known, None is returned.
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    if key not in actual_arrival_times.keys():
+    if key in actual_arrival_times.keys():
+        newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
+        return newest_stop_time_update.arrival_delay
+    else:
         return None
-    newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
-    return newest_stop_time_update.arrival_delay
 
 
 def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int | None:
@@ -181,10 +183,11 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
     If no actual arrival time is known, None is returned.
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    if key not in actual_arrival_times.keys():
+    if key in actual_arrival_times.keys():
+        newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
+        return newest_stop_time_update.arrival_time
+    else:
         return None
-    newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
-    return newest_stop_time_update.arrival_time
 
 
 def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
