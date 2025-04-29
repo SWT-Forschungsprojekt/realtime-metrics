@@ -2,7 +2,7 @@ import logging
 import sys
 from optparse import OptionParser
 from typing import Dict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
 from sqlalchemy import create_engine, inspect
@@ -48,13 +48,23 @@ def run_analysis():
             trips[key] = trip_updates
 
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
-    print("MSE accuracy: ", mse_accuracy_result)
+    if mse_accuracy_result is None:
+        print("MSE accuracy could not be computed, no data provided!")
+    else:
+        print("MSE accuracy: ", mse_accuracy_result)
 
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
-    print("ETA accuracy: ", eta_accuracy_result)
+    if eta_accuracy_result is None:
+        print("ETA accuracy could not be computed, no data provided!")
+    else:
+        print("ETA accuracy: ", eta_accuracy_result)
 
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
-    print("Experienced Wait Time Delay: ", experienced_wait_time_delay_result)
+    if experienced_wait_time_delay_result is None:
+        print("Experienced Wait Time Delay could not be computed, no data provided!")
+    else:
+        print("Experienced Wait Time Delay: ", experienced_wait_time_delay_result)
+
     availabilities = []
     
     for trip_id in trips.keys():
@@ -70,7 +80,7 @@ def run_analysis():
     print("Availability of acceptable stop time updates: ", availability_acceptable_stop_time_updates_result)
 
 
-def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
+def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
     computes the accuracy of the given stop time updates using mean squared error
     """
@@ -94,8 +104,8 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     # compute MSE
     if len(samples) <= 0:
         logger.info("No data provided!")
-        return 0
-    
+        return None
+
     sum = 0.0
     for entry in samples:
         sum += entry * entry
@@ -104,7 +114,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     return mean_squared_error
 
 
-def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
+def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
     computes the accuracy of the given stop time updates using the eta bucketing approach
     """
@@ -185,7 +195,7 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]):
     # compute total accuracy
     if len(accuracies) == 0:
         logger.info("No data provided!")
-        return 0.0
+        return None
     mean_accuracy = numpy.mean(accuracies) * 100
     return mean_accuracy
 
@@ -216,12 +226,12 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
         return None
 
 
-def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
+def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
     Computes the average Experienced Wait Time Delay metrics for the given stop time updates.
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
     It computes the average amount of time in minutes a passenger has to wait at a stop, 
-    if he arrives at the arrival time of the most up to date stop time update.
+    if he arrives at the arrival time of the most up-to-date stop time update.
 
     Parameters:
     stop_time_updates: list of corresponding trip updates and stop time updates
@@ -276,29 +286,21 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
         current_time = min_arrival_time
         end_time = max_arrival_time
 
-        while current_time <= end_time:
+        for current_time in range(int(min_arrival_time), int(end_time) + 1, 60):
             # find the last stop time update
             next_predicted_arrival = get_last_predicted_update(current_time, trip_stop_updates)
             if not next_predicted_arrival:
-                current_time += 60  # Increment by 1 minute
                 continue  # No prediction available
             next_predicted_arrival_time = next_predicted_arrival[1].arrival_time
             if next_predicted_arrival_time > current_time + 3600:
-                current_time += 60  # Increment by 1 minute
                 continue  # prediction is more than 60 minutes in the future
-
-            # find next experienced arrival at or after predicted
+            # find next experienced arrival at or after predicted 
             next_actual_arrival = get_next_actual_arrival(next_predicted_arrival_time, route_id, stop_id)
             if not next_actual_arrival:
-                current_time += 60  # Increment by 1 minute
-                continue # no actual arrival after the given timestamp found
+                continue  # no actual arrival after the given timestamp found
             next_actual_arrival_time = next_actual_arrival.arrival_time
-
             delay = next_actual_arrival_time - next_predicted_arrival_time
             delays.append(delay)
-
-            # Move to the next minute
-            current_time += 60
 
     if not delays:
         logger.info("No delay samples found.")
