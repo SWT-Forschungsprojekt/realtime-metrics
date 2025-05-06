@@ -28,9 +28,17 @@ def run_analysis():
         for trip_stop_time_update in trip_stop_time_updates:
             stop_time_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
-            # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
+            # add stop time update to trips
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
             key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
+            if key in trips.keys():
+                trip_updates: list[TripUpdate] = trips[key]
+            else:
+                trip_updates: list[TripUpdate] = []
+            trip_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
+            trips[key] = trip_updates
+
+            # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
             if stop_time_update.arrival_uncertainty > 0:
                 continue # only consider updates with arrival uncertainty 0 as actual arrivals
             if key in actual_arrival_times.keys():
@@ -38,14 +46,6 @@ def run_analysis():
                     actual_arrival_times[key] = (tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
             else:
                 actual_arrival_times[key] = (tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
-
-            # add stop time update to trips
-            if key in trips.keys():
-                trip_updates: list[TripUpdate] = trips[key]
-            else:
-                trip_updates: list[TripUpdate] = []
-            trip_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
-            trips[key] = trip_updates
 
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     if mse_accuracy_result is None:
