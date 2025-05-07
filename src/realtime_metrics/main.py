@@ -57,13 +57,13 @@ def run_analysis():
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
     else:
-        print("ETA accuracy: ", eta_accuracy_result)
+        print(f"ETA accuracy: {eta_accuracy_result}%")
 
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
     else:
-        print("Experienced Wait Time Delay: ", experienced_wait_time_delay_result)
+        print(f"Experienced Wait Time Delay: {experienced_wait_time_delay_result} seconds")
 
     availabilities = []
     
@@ -77,7 +77,7 @@ def run_analysis():
     else:
         availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
 
-    print("Availability of acceptable stop time updates: ", availability_acceptable_stop_time_updates_result)
+    print(f"Availability of acceptable stop time updates: {availability_acceptable_stop_time_updates_result}%")
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
@@ -102,7 +102,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
         samples.append(prediction_error)
 
     # compute MSE
-    if len(samples) <= 0:
+    if len(samples) == 0:
         logger.info("No data provided!")
         return None
 
@@ -317,7 +317,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     """
     Computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
-    It computes the percentage of one minute slots with two or more updates.
+    It computes the percentage of one-minute slots with two or more updates.
 
     Parameters:
     stop_time_updates: list of corresponding trip updates and stop time updates
@@ -376,7 +376,7 @@ def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, St
     return updates_published_at_last_timestamp[0]
 
 
-def get_next_actual_arrival(timestamp: int, route_id: int, stop_id: int) -> StopTimeUpdate | None:
+def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> StopTimeUpdate | None:
     """
     Returns the stop time update containing the next actual arrival time for the given route and stop after the given timestamp.
     """
