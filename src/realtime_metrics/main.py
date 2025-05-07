@@ -79,6 +79,10 @@ def run_analysis():
 
     print(f"Availability of acceptable stop time updates: {availability_acceptable_stop_time_updates_result}%")
 
+    # prediction reliability --------------------------------------------------------------------------------------------------------
+    prediction_reliability_result = prediction_reliability(stop_time_updates)
+    print(f"Prediction reliability: {prediction_reliability_result * 100}%")
+
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
@@ -393,6 +397,55 @@ def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> Stop
         
     actual_arrivals.sort(key=lambda update: update.arrival_time)
     return actual_arrivals[0]
+
+
+def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
+    """
+    Computes the prediction reliability metrics for a route, trip and stop combination.
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    It computes the percentage of stop time updates classified as reliable.
+    Whether or not a stop time update counts as reliable depends on the deviation of the predicted arrival time from the actual arrival time, 
+    as well as how far in the future the prediction is.
+
+    Parameters:
+    stop_time_updates: list of corresponding trip updates and stop time updates
+
+    Returns:
+    A float containing the prediction reliability.
+    """
+    if len(stop_time_updates) == 0:
+        return 0.0 # no stop time updates are not reliable
+    
+    reliable_updates = 0
+    unreliable_updates = 0
+    
+    for update in stop_time_updates:
+        actual_arrival_time = get_actual_arrival_time(update[0], update[1])
+        if actual_arrival_time is None:
+            continue # skip updates without known actual arrival time
+        prediction_error = actual_arrival_time - update[1].arrival_time
+
+        predicted_arrival_time = update[1].arrival_time
+        prediction_published = update[0].timestamp.replace(tzinfo=timezone.utc).timestamp()
+        time_to_prediction = (predicted_arrival_time - prediction_published) / 60 # time is required in minutes
+
+        if time_to_prediction < 0:
+            continue # skip updates with negative time to predictions (updates published for the past or without an arrival time)
+
+        lower_bound = -60 * numpy.log(time_to_prediction + 1.3)
+        upper_bound = 60 * numpy.log(time_to_prediction + 1.5)
+
+        if prediction_error > lower_bound and prediction_error < upper_bound:
+            reliable_updates += 1
+        else:
+            unreliable_updates += 1
+
+    total = reliable_updates + unreliable_updates
+
+    if total == 0:
+        return 0.0 # no stop time updates are not reliable
+    
+    return reliable_updates / total
 
 
 if __name__ == "__main__":
