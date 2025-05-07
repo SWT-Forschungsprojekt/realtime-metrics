@@ -18,7 +18,7 @@ def run_analysis():
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
 
-    trips: Dict[tuple[str, str, str], list[TripUpdate]]  = dict()
+    trips: Dict[tuple[str, str, str], list[tuple[TripUpdate, StopTimeUpdate]]]  = dict()
 
     time_frame_start = sys.maxsize
     time_frame_end = 0
@@ -47,24 +47,28 @@ def run_analysis():
             else:
                 actual_arrival_times[key] = (tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
 
+    # MSE accuracy ------------------------------------------------------------------------------------------------------------------
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     if mse_accuracy_result is None:
         print("MSE accuracy could not be computed, no data provided!")
     else:
         print("MSE accuracy: ", mse_accuracy_result)
 
+    # ETA accuracy ------------------------------------------------------------------------------------------------------------------
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
     else:
         print(f"ETA accuracy: {eta_accuracy_result}%")
 
+    # experienced wait time delay ---------------------------------------------------------------------------------------------------
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
     else:
         print(f"Experienced Wait Time Delay: {experienced_wait_time_delay_result} seconds")
 
+    # availability of acceptable stop time updates ----------------------------------------------------------------------------------
     availabilities = []
     
     for trip_id in trips.keys():
@@ -78,6 +82,19 @@ def run_analysis():
         availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
 
     print(f"Availability of acceptable stop time updates: {availability_acceptable_stop_time_updates_result}%")
+
+    # prediction inconsistency ------------------------------------------------------------------------------------------------------
+    inconsistencies = []
+
+    for key in actual_arrival_times.keys():
+        actual_arrival_time = actual_arrival_times[key][1].arrival_time
+        updates = trips[key]
+        inconsistency = prediction_inconsistency(actual_arrival_time, updates)
+        inconsistencies.append(inconsistency)
+        logger.info(f"Prediction inconsistency for route {key[0]}, trip {key[1]}, stop {key[2]}: {inconsistency} seconds")
+
+    prediction_inconsistency_result = numpy.mean(inconsistencies)
+    print(f"Prediction inconsistency: {prediction_inconsistency_result} seconds")
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
@@ -393,6 +410,60 @@ def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> Stop
         
     actual_arrivals.sort(key=lambda update: update.arrival_time)
     return actual_arrivals[0]
+
+
+def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
+    """
+    Computes the prediction inconsistency metrics for a route, trip and stop combination.
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    It computes the predicted arrival time spread in 30 two minute time frames, starting every minute.
+    It computes the spread as the difference of the minimal and maximal predicted arrival time in each time frame. 
+    The prediction inconsistency is then the average spread of all windows.
+
+    Parameters:
+    actual_arrival_time: the actual arrival time of the vehicle (for that route, trip and stop)
+    updates: list of corresponding trip updates and stop time updates (for that route, trip and stop)
+
+    Returns:
+    A float containing the prediction inconsistency.
+    """
+    thirty_one_minutes_earlier = actual_arrival_time - 1860 # 31 minutes to fit 30 time windows of 2 minutes, starting every minute
+    valid_updates = [update for update in updates if update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() >= thirty_one_minutes_earlier]
+
+    if len(valid_updates) == 0:
+        return 0.0 # no inconsistency, if no updates in the last 31 minutes
+    
+    two_minutes_earlier = actual_arrival_time - 120
+    spreads = []
+
+    logger.info("----------------------------------------------------------")
+    logger.info(f"actual arrival time: {actual_arrival_time} ({datetime.fromtimestamp(actual_arrival_time, timezone.utc)})")
+
+    for current_time_frame_start in range(thirty_one_minutes_earlier, two_minutes_earlier + 1, 60):
+        updates_in_time_frame = [update for update in valid_updates if 
+                                 update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() >= current_time_frame_start and 
+                                 update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() < current_time_frame_start + 120]
+        
+        if len(updates_in_time_frame) == 0:
+            logger.info(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): no entries")
+            continue # skip time frames with no updates
+
+        updates_in_time_frame.sort(key=lambda update: update[1].arrival_time)
+        min_prediction = updates_in_time_frame[0][1].arrival_time
+        max_prediction = updates_in_time_frame[-1][1].arrival_time
+        spread = max_prediction - min_prediction
+        logger.info(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): {spread}")
+        spreads.append(spread)
+
+    logger.info("----------------------------------------------------------")
+
+    logger.info(spreads)
+
+    if len(spreads) == 0:
+        return 0.0
+    
+    average_spread = numpy.mean(spreads)
+    return average_spread
 
 
 if __name__ == "__main__":
