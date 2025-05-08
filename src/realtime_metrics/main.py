@@ -86,12 +86,12 @@ def run_analysis():
     # prediction inconsistency ------------------------------------------------------------------------------------------------------
     inconsistencies = []
 
-    for key in actual_arrival_times.keys():
-        actual_arrival_time = actual_arrival_times[key][1].arrival_time
-        updates = trips[key]
+    for trip_stop in actual_arrival_times.keys():
+        actual_arrival_time = actual_arrival_times[trip_stop][1].arrival_time
+        updates = trips[trip_stop]
         inconsistency = prediction_inconsistency(actual_arrival_time, updates)
         inconsistencies.append(inconsistency)
-        logger.info(f"Prediction inconsistency for route {key[0]}, trip {key[1]}, stop {key[2]}: {inconsistency} seconds")
+        logger.info(f"Prediction inconsistency for route {trip_stop[0]}, trip {trip_stop[1]}, stop {trip_stop[2]}: {inconsistency} seconds")
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {prediction_inconsistency_result} seconds")
