@@ -5,7 +5,7 @@ from typing import Dict
 from datetime import datetime, timezone, timedelta
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
-from gtfsdb_models import StopTime
+from realtime_metrics.gtfsdb_models import StopTime
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
@@ -21,7 +21,6 @@ def run_analysis():
 
     for stop_time in stoptimes:
         trip_stop_times[(stop_time.trip_id, stop_time.stop_id)] = stop_time.arrival_time
-
 
     tripUpdates = session.query(TripUpdate).group_by(TripUpdate.trip_id).all()
 
@@ -51,28 +50,28 @@ def run_analysis():
             if stop_time_update.arrival_uncertainty > 0:
                 continue # only consider updates with arrival uncertainty 0 as actual arrivals
             if key in actual_arrival_times.keys():
-                if tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp() > actual_arrival_times[key][0]:
-                    actual_arrival_times[key] = (tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
+                if trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp() > actual_arrival_times[key][0]:
+                    actual_arrival_times[key] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
             else:
-                actual_arrival_times[key] = (tripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
+                actual_arrival_times[key] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
 
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     if mse_accuracy_result is None:
         print("MSE accuracy could not be computed, no data provided!")
     else:
-        print("MSE accuracy: ", mse_accuracy_result)
+        print("MSE accuracy: ", round(mse_accuracy_result, 2))
 
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
     else:
-        print(f"ETA accuracy: {eta_accuracy_result}%")
+        print(f"ETA accuracy: {round(eta_accuracy_result, 2)}%")
 
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
     else:
-        print(f"Experienced Wait Time Delay: {experienced_wait_time_delay_result} seconds")
+        print(f"Experienced Wait Time Delay: {round(experienced_wait_time_delay_result, 2)} seconds")
 
     availabilities = []
     
@@ -86,11 +85,11 @@ def run_analysis():
     else:
         availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
 
-    print(f"Availability of acceptable stop time updates: {availability_acceptable_stop_time_updates_result}%")
+    print(f"Availability of acceptable stop time updates: {round(availability_acceptable_stop_time_updates_result, 2)}%")
 
     # prediction reliability --------------------------------------------------------------------------------------------------------
     prediction_reliability_result = prediction_reliability(stop_time_updates)
-    print(f"Prediction reliability: {prediction_reliability_result * 100}%")
+    print(f"Prediction reliability: {round(prediction_reliability_result * 100, 2)}%")
 
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
@@ -256,7 +255,7 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
 
     delays = []
 
-    logger.info(trip_stop_time_updates)
+    logger.debug(trip_stop_time_updates)
 
     indexed_updates: Dict[tuple[str, str], list[tuple[TripUpdate, StopTimeUpdate]]] = {}
 
@@ -319,7 +318,7 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
         logger.info("No delay samples found.")
         return None
 
-    logger.info("Delays: %s", delays)    
+    logger.debug("Delays: %s", delays)    
     average_delay = numpy.mean(delays)
     return average_delay
 
@@ -340,8 +339,8 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     Returns:
     A float containing the percentage of one minute slots with two or more updates.
     """
-    logger.info("Time frame start: %s", time_frame_start)
-    logger.info("Time frame end: %s", time_frame_end)
+    logger.debug("Time frame start: %s", time_frame_start)
+    logger.debug("Time frame end: %s", time_frame_end)
 
     # dict to store how many stop time updates are available for each minute slot
     time_slots: Dict[int, int] = dict()
@@ -364,13 +363,13 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
 
     # calculate percentage of minutes with two or more stop time updates
     number_of_time_slots = time_frame_end - time_frame_start + 1
-    logger.info("Time slots: %s", number_of_time_slots)
+    logger.debug("Time slots: %s", number_of_time_slots)
 
     time_slots_with_enough_updates = 0
     for key in time_slots.keys():
         if time_slots[key] >= 2:
             time_slots_with_enough_updates += 1
-    logger.info("Time slots with enough updates: %s", time_slots_with_enough_updates)
+    logger.debug("Time slots with enough updates: %s", time_slots_with_enough_updates)
 
     return (time_slots_with_enough_updates / number_of_time_slots) * 100
 
@@ -422,21 +421,26 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     Returns:
     A float containing the prediction reliability.
     """
+    logger.debug(f"amount of updates: {len(stop_time_updates)}")
     if len(stop_time_updates) == 0:
         return 0.0 # no stop time updates are not reliable
     
     reliable_updates = 0
     unreliable_updates = 0
-
-    values = []
     
     for update in stop_time_updates:
         trip_id = update[0].trip_id
         stop_id = update[1].stop_id
+        logger.debug("-----------------------------------------------------------------------------")
+        logger.debug(f"update from: {update[0].timestamp}")
         actual_arrival_time = get_actual_arrival_time(update[0], update[1])
+
         if actual_arrival_time is None:
             continue # skip updates without known actual arrival time
         prediction_error = actual_arrival_time - update[1].arrival_time
+        logger.debug(f"actual arrival time: {datetime.fromtimestamp(actual_arrival_time, timezone.utc)}")
+        logger.debug(f"predicted arrival time: {datetime.fromtimestamp(update[1].arrival_time, timezone.utc)}")
+        logger.debug(f"prediction error: {prediction_error}")
 
         predicted_arrival_time = update[1].arrival_time
         prediction_published = update[0].timestamp.replace(tzinfo=timezone.utc).timestamp()
@@ -449,8 +453,8 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
         if datetime.combine(datetime.min, prediction_published_time) < datetime.combine(datetime.min, scheduled_arrival_time) - timedelta(minutes=60):
             continue
 
-
         time_to_prediction = (predicted_arrival_time - prediction_published) / 60 # time is required in minutes
+        logger.debug(f"time to prediction: {time_to_prediction}")
 
         if time_to_prediction < 0:
             continue # skip updates with negative time to predictions (updates published for the past or without an arrival time)
@@ -458,16 +462,20 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
         lower_bound = -60 * numpy.log(time_to_prediction + 1.3)
         upper_bound = 60 * numpy.log(time_to_prediction + 1.5)
 
-        if prediction_error > lower_bound and prediction_error < upper_bound:
+        logger.debug(f"lower bound: {lower_bound}")
+        logger.debug(f"upper bound: {upper_bound}")
+
+        if lower_bound < prediction_error < upper_bound:
             reliable_updates += 1
-            values.append((prediction_error, time_to_prediction, True))
+            logger.debug("reliable")
         else:
             unreliable_updates += 1
-            values.append((prediction_error, time_to_prediction, False))
+            logger.debug("unreliable")
 
     total = reliable_updates + unreliable_updates
 
     if total == 0:
+        logger.info("No valid updates pprovided!")
         return 0.0 # no stop time updates are not reliable
     
     return reliable_updates / total
@@ -484,10 +492,11 @@ if __name__ == "__main__":
                 action='store_true', help="Don't print warnings and status messages")
     options, arguments = option_parser.parse_args()
 
+    # TODO: add option to choose debug logs
     if options.quiet:
         level = logging.ERROR
     elif options.verbose:
-        level = logging.DEBUG
+        level = logging.INFO
     else:
         level = logging.WARNING
     # Set up a logger
