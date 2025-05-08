@@ -447,10 +447,11 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
         if trip_id not in first_trip_arrival_times.keys():
             logger.debug("Min arrival_time not found for trip_id: %s", trip_id)
             continue
+
         first_trip_arrival_time = datetime.strptime(first_trip_arrival_times[trip_id], "%H:%M:%S").replace(year=prediction_published_datetime.year, month=prediction_published_datetime.month, day=prediction_published_datetime.day)
 
         # check prediction_published is greater than scheduled trip stop arrival time - 60 minutes
-        if prediction_published_datetime < first_trip_arrival_time- timedelta(minutes=60):
+        if prediction_published_datetime < first_trip_arrival_time - timedelta(minutes=60):
             continue
 
         time_to_prediction = (predicted_arrival_time - prediction_published) / 60 # time is required in minutes

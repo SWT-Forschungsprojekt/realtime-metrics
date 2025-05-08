@@ -1,11 +1,6 @@
-import logging
-
 from gtfsrdb.model import Base
 from sqlalchemy import Column
-from sqlalchemy.sql.expression import func
 from sqlalchemy.types import SmallInteger, Integer, Numeric, String
-
-log = logging.getLogger(__name__)
 
 class StopTime(Base):
     __tablename__ = 'stop_times'
