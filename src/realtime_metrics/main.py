@@ -2,9 +2,10 @@ import logging
 import sys
 from optparse import OptionParser
 from typing import Dict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
+from gtfsdb_models import StopTime
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
@@ -14,6 +15,14 @@ def run_analysis():
     """
     get all stop time updates and compute the different metrics
     """
+    logger.warning("Querying all stop times...")
+    stoptimes = session.query(StopTime).all()
+    logger.warning("Number of stop times: %s", len(stoptimes))
+
+    for stop_time in stoptimes:
+        trip_stop_times[(stop_time.trip_id, stop_time.stop_id)] = stop_time.arrival_time
+
+
     tripUpdates = session.query(TripUpdate).group_by(TripUpdate.trip_id).all()
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
@@ -418,8 +427,12 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     
     reliable_updates = 0
     unreliable_updates = 0
+
+    values = []
     
     for update in stop_time_updates:
+        trip_id = update[0].trip_id
+        stop_id = update[1].stop_id
         actual_arrival_time = get_actual_arrival_time(update[0], update[1])
         if actual_arrival_time is None:
             continue # skip updates without known actual arrival time
@@ -427,6 +440,16 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
 
         predicted_arrival_time = update[1].arrival_time
         prediction_published = update[0].timestamp.replace(tzinfo=timezone.utc).timestamp()
+
+        # check prediction_published is greater than scheduled trip stop arrival time - 60 minutes
+        prediction_published_time = datetime.strptime(datetime.fromtimestamp(prediction_published, tz=timezone.utc).strftime("%H:%M:%S"), "%H:%M:%S").replace(tzinfo=timezone.utc).time()
+        # TODO: check if key is in trip_stop_times
+        scheduled_arrival_time = datetime.strptime(trip_stop_times[(trip_id, stop_id)], "%H:%M:%S").replace(tzinfo=timezone.utc).time()
+
+        if datetime.combine(datetime.min, prediction_published_time) < datetime.combine(datetime.min, scheduled_arrival_time) - timedelta(minutes=60):
+            continue
+
+
         time_to_prediction = (predicted_arrival_time - prediction_published) / 60 # time is required in minutes
 
         if time_to_prediction < 0:
@@ -437,8 +460,10 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
 
         if prediction_error > lower_bound and prediction_error < upper_bound:
             reliable_updates += 1
+            values.append((prediction_error, time_to_prediction, True))
         else:
             unreliable_updates += 1
+            values.append((prediction_error, time_to_prediction, False))
 
     total = reliable_updates + unreliable_updates
 
@@ -485,6 +510,9 @@ if __name__ == "__main__":
 
     # dict for newest stop time update
     actual_arrival_times: Dict[tuple[str, str, str], tuple[int, StopTimeUpdate]] = dict()
+
+    # dict for trip stop times (gtfsdb)
+    trip_stop_times: Dict[tuple[str, str], str] = dict()
 
     # Check if it has the tables
     # Base from model.py
