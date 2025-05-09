@@ -453,10 +453,10 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
         if timestamp < time_frame_start or timestamp > time_frame_end:
             continue
 
-        time = int((timestamp - time_frame_start).total_seconds() / 60)
-        if time not in vehicle_positions_time.keys():
-            vehicle_positions_time[time] = []
-        vehicle_positions_time[time].append(vehicle_position)
+        minutes_since_time_frame_start = int((timestamp - time_frame_start).total_seconds() / 60)
+        if minutes_since_time_frame_start not in vehicle_positions_time.keys():
+            vehicle_positions_time[minutes_since_time_frame_start] = []
+        vehicle_positions_time[minutes_since_time_frame_start].append(vehicle_position)
 
     time_slots_with_enough_updates = 0
 
