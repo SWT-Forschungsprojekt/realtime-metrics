@@ -75,7 +75,7 @@ def run_analysis():
     availabilities = []
     
     for trip_id in trips.keys():
-        trip_updates = trips[trip_id]
+        trip_updates: list[tuple[TripUpdate, StopTimeUpdate]] = trips[trip_id]
         if len(trip_updates) == 0:
             continue
         trip_updates.sort(key=lambda u: u[0].timestamp.replace(tzinfo=timezone.utc).timestamp())
@@ -107,6 +107,7 @@ def run_analysis():
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {prediction_inconsistency_result} seconds")
+
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
@@ -341,19 +342,25 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
 
 def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]], 
                                               time_frame_start: int, 
-                                              time_frame_end: int):
+                                              time_frame_end: int) -> float:
     """
     Computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
     It computes the percentage of one-minute slots with two or more updates.
 
-    Parameters:
-    stop_time_updates: list of corresponding trip updates and stop time updates
-    time_frame_start: start of the time frame to observe, in seconds since 1970
-    time_frame_end: end of the time frame to observe, in seconds since 1970
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]
+        list of corresponding trip updates and stop time updates
+    time_frame_start : int
+        start of the time frame to observe, in seconds since 1970
+    time_frame_end : int 
+        end of the time frame to observe, in seconds since 1970
 
-    Returns:
-    A float containing the percentage of one minute slots with two or more updates.
+    Returns
+    -------
+    float
+        The percentage of one minute slots with two or more updates.
     """
     logger.debug("Time frame start: %s", time_frame_start)
     logger.debug("Time frame end: %s", time_frame_end)
@@ -364,18 +371,18 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     for update in stop_time_updates:
         trip_update = update[0]
 
-        # get time in minutes
-        time_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
+        # get time in minutes by removing part of the timestamp responsible for seconds
+        time_rounded_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
 
         # skip, if outide of time frame
-        if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
+        if time_rounded_in_minutes < time_frame_start or time_rounded_in_minutes > time_frame_end:
             continue
 
         # increase respective stop time counter
-        if time_in_minutes not in time_slots.keys():
-            time_slots[time_in_minutes] = 1
+        if time_rounded_in_minutes not in time_slots.keys():
+            time_slots[time_rounded_in_minutes] = 1
         else:
-            time_slots[time_in_minutes] = time_slots[time_in_minutes] + 1
+            time_slots[time_rounded_in_minutes] = time_slots[time_rounded_in_minutes] + 1
 
     # calculate percentage of minutes with two or more stop time updates
     number_of_time_slots = int(time_frame_end / 60) - int(time_frame_start / 60) + 1
