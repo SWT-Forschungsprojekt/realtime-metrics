@@ -83,7 +83,6 @@ def run_analysis():
         time_frame_end = int(trip_updates[-1][0].timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
         trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
         availabilities.append(trip_availability)
-        break
 
     if len(availabilities) == 0:
         availability_acceptable_stop_time_updates_result = 0
