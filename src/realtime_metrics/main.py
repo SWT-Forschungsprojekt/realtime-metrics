@@ -26,9 +26,6 @@ def run_analysis():
 
     trips: Dict[tuple[str, str, str], list[tuple[TripUpdate, StopTimeUpdate]]]  = dict()
 
-    time_frame_start = sys.maxsize
-    time_frame_end = 0
-
     for tripUpdate in tripUpdates:
         trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).order_by(TripUpdate.route_id.desc(), TripUpdate.trip_id.desc(), StopTimeUpdate.stop_id.desc()).all()
         for trip_stop_time_update in trip_stop_time_updates:
@@ -79,8 +76,14 @@ def run_analysis():
     
     for trip_id in trips.keys():
         trip_updates = trips[trip_id]
+        if len(trip_updates) == 0:
+            continue
+        trip_updates.sort(key=lambda u: u[0].timestamp.replace(tzinfo=timezone.utc).timestamp())
+        time_frame_start = int(trip_updates[0][0].timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
+        time_frame_end = int(trip_updates[-1][0].timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
         trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
         availabilities.append(trip_availability)
+        break
 
     if len(availabilities) == 0:
         availability_acceptable_stop_time_updates_result = 0
@@ -347,8 +350,8 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
 
     Parameters:
     stop_time_updates: list of corresponding trip updates and stop time updates
-    time_frame_start: start of the time frame to observe, in minutes since 1970
-    time_frame_end: end of the time frame to observe, in minutes since 1970
+    time_frame_start: start of the time frame to observe, in seconds since 1970
+    time_frame_end: end of the time frame to observe, in seconds since 1970
 
     Returns:
     A float containing the percentage of one minute slots with two or more updates.
@@ -363,7 +366,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
         trip_update = update[0]
 
         # get time in minutes
-        time_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60)
+        time_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
 
         # skip, if outide of time frame
         if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
@@ -376,7 +379,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
             time_slots[time_in_minutes] = time_slots[time_in_minutes] + 1
 
     # calculate percentage of minutes with two or more stop time updates
-    number_of_time_slots = time_frame_end - time_frame_start + 1
+    number_of_time_slots = int(time_frame_end / 60) - int(time_frame_start / 60) + 1
     logger.debug("Time slots: %s", number_of_time_slots)
 
     time_slots_with_enough_updates = 0
@@ -558,16 +561,18 @@ if __name__ == "__main__":
                 help='Database connection string', metavar='DSN')
     option_parser.add_option('-v', '--verbose', default=False, dest='verbose',
                 action='store_true', help='Print generated SQL')
-
     option_parser.add_option('-q', '--quiet', default=False, dest='quiet',
                 action='store_true', help="Don't print warnings and status messages")
+    option_parser.add_option('--debug', default=False, dest='debug',
+                action='store_true', help="Print debug logs")
     options, arguments = option_parser.parse_args()
 
-    # TODO: add option to choose debug logs
     if options.quiet:
         level = logging.ERROR
     elif options.verbose:
         level = logging.INFO
+    elif options.debug:
+        level = logging.DEBUG
     else:
         level = logging.WARNING
     # Set up a logger
