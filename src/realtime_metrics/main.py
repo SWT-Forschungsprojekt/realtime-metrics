@@ -465,9 +465,11 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
             time_slots_with_enough_updates += 1
 
 
+    if len(vehicle_positions_time) == 0:
+        logger.info("No vehicle positions fall within the specified time frame!")
+        return 0.0
+
     return time_slots_with_enough_updates / len(vehicle_positions_time) * 100
-
-
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
