@@ -92,7 +92,7 @@ def run_analysis():
     # prediction reliability --------------------------------------------------------------------------------------------------------
     prediction_reliability_result = prediction_reliability(stop_time_updates)
     print(f"Prediction reliability: {round(prediction_reliability_result * 100, 2)}%")
-    
+
     # prediction inconsistency ------------------------------------------------------------------------------------------------------
     inconsistencies = []
 
@@ -101,10 +101,10 @@ def run_analysis():
         updates = trips[trip_stop]
         inconsistency = prediction_inconsistency(actual_arrival_time, updates)
         inconsistencies.append(inconsistency)
-        logger.info(f"Prediction inconsistency for route {trip_stop[0]}, trip {trip_stop[1]}, stop {trip_stop[2]}: {inconsistency} seconds")
+        logger.debug(f"Prediction inconsistency for route {trip_stop[0]}, trip {trip_stop[1]}, stop {trip_stop[2]}: {round(inconsistency, 2)} seconds")
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
-    print(f"Prediction inconsistency: {prediction_inconsistency_result} seconds")
+    print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
@@ -120,11 +120,11 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
     for update in stop_time_updates:
         trip_update = update[0]
         stop_time_update = update[1]
-        actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
-        if actual_delay is None:
-            continue # skip updates with unknown actual delay
-        predicted_delay = stop_time_update.arrival_delay
-        prediction_error = actual_delay - predicted_delay
+        actual_arrival_time = get_actual_arrival_time(trip_update=trip_update, stop_time_update=stop_time_update)
+        if actual_arrival_time is None:
+            continue # skip updates with unknown actual arrival time
+        predicted_arrival_time = stop_time_update.arrival_time
+        prediction_error = actual_arrival_time - predicted_arrival_time
         samples.append(prediction_error)
 
     # compute MSE
@@ -192,11 +192,11 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
             continue
 
         # check if inside allowed interval
-        actual_delay = get_actual_delay(trip_update=trip_update, stop_time_update=stop_time_update)
-        if actual_delay is None:
-            continue # skip updates with unknown actual delay
-        predicted_delay = stop_time_update.arrival_delay
-        difference =  predicted_delay - actual_delay
+        actual_arrival_time = get_actual_arrival_time(trip_update=trip_update, stop_time_update=stop_time_update)
+        if actual_arrival_time is None:
+            continue # skip updates with unknown actual arrival time
+        predicted_arrival_time = stop_time_update.arrival_time
+        difference =  predicted_arrival_time - actual_arrival_time
 
         bucket = buckets[bucket_index]
 
@@ -224,19 +224,6 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
         return None
     mean_accuracy = numpy.mean(accuracies) * 100
     return mean_accuracy
-
-
-def get_actual_delay(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int | None:
-    """
-    Returns the actual delay for the route and stop of the given TripUpdate.
-    If no actual delay is known, None is returned.
-    """
-    key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    if key in actual_arrival_times.keys():
-        newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
-        return newest_stop_time_update.arrival_delay
-    else:
-        return None
 
 
 def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeUpdate) -> int | None:
@@ -464,7 +451,11 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
             logger.debug("Min arrival_time not found for trip_id: %s", trip_id)
             continue
 
-        first_trip_arrival_time = datetime.strptime(first_trip_arrival_times[trip_id], "%H:%M:%S").replace(year=prediction_published_datetime.year, month=prediction_published_datetime.month, day=prediction_published_datetime.day)
+        first_trip_arrival_time = datetime.strptime(first_trip_arrival_times[trip_id], "%H:%M:%S").replace(
+            year=prediction_published_datetime.year, 
+            month=prediction_published_datetime.month, 
+            day=prediction_published_datetime.day
+        )
 
         # check prediction_published is greater than scheduled trip stop arrival time - 60 minutes
         if prediction_published_datetime < first_trip_arrival_time - timedelta(minutes=60):
@@ -492,7 +483,7 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     total = reliable_updates + unreliable_updates
 
     if total == 0:
-        logger.info("No valid updates pprovided!")
+        logger.info("No valid updates provided!")
         return 0.0 # no stop time updates are not reliable
     
     return reliable_updates / total
@@ -522,8 +513,8 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     two_minutes_earlier = actual_arrival_time - 120
     spreads = []
 
-    logger.info("----------------------------------------------------------")
-    logger.info(f"actual arrival time: {actual_arrival_time} ({datetime.fromtimestamp(actual_arrival_time, timezone.utc)})")
+    logger.debug("----------------------------------------------------------")
+    logger.debug(f"actual arrival time: {actual_arrival_time} ({datetime.fromtimestamp(actual_arrival_time, timezone.utc)})")
 
     for current_time_frame_start in range(thirty_one_minutes_earlier, two_minutes_earlier + 1, 60):
         updates_in_time_frame = [update for update in valid_updates if 
@@ -531,19 +522,19 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
                                  update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() < current_time_frame_start + 120]
         
         if len(updates_in_time_frame) == 0:
-            logger.info(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): no entries")
+            logger.debug(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): no entries")
             continue # skip time frames with no updates
 
         updates_in_time_frame.sort(key=lambda update: update[1].arrival_time)
         min_prediction = updates_in_time_frame[0][1].arrival_time
         max_prediction = updates_in_time_frame[-1][1].arrival_time
         spread = max_prediction - min_prediction
-        logger.info(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): {spread}")
+        logger.debug(f"time frame {current_time_frame_start} ({datetime.fromtimestamp(current_time_frame_start, timezone.utc)}): {spread}")
         spreads.append(spread)
 
-    logger.info("----------------------------------------------------------")
+    logger.debug("----------------------------------------------------------")
 
-    logger.info(spreads)
+    logger.debug(spreads)
 
     if len(spreads) == 0:
         return 0.0
@@ -558,7 +549,6 @@ if __name__ == "__main__":
                 help='Database connection string', metavar='DSN')
     option_parser.add_option('-v', '--verbose', default=False, dest='verbose',
                 action='store_true', help='Print generated SQL')
-
     option_parser.add_option('-q', '--quiet', default=False, dest='quiet',
                 action='store_true', help="Don't print warnings and status messages")
     options, arguments = option_parser.parse_args()
