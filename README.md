@@ -39,5 +39,15 @@ gtfsrdb -t https://gtfs.tpbi.ro/api/gtfs-rt/tripUpdates -p https://gtfs.tpbi.ro/
 Now you can run the script to calculate some metrics on it:
 
 ```shell
-python ./src/realtime_metrics/main.py -d sqlite:///example.db 
+python ./src/realtime_metrics/main.py -d sqlite:///example.db
+```
+
+Currently, two analysis can be run:
+- `stop_time`
+- `vehicle_position`
+
+The default is `stop_time`, but you can specify the analysis with the `-a` parameter:
+
+```shell
+python ./src/realtime_metrics/main.py -d sqlite:///example.db -a vehicle_position
 ```
