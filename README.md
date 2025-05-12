@@ -43,6 +43,7 @@ python ./src/realtime_metrics/main.py -d sqlite:///example.db
 ```
 
 Currently, two analysis can be run:
+
 - `stop_time`
 - `vehicle_position`
 
