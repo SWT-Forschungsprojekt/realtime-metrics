@@ -108,6 +108,7 @@ def run_stop_time_analysis():
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
 
+
 def run_vehicle_position_analysis():
     """
     get all vehicle positions and compute the different metrics
@@ -417,6 +418,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
 
     return (time_slots_with_enough_updates / number_of_time_slots) * 100
 
+
 def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePosition], 
                                               time_frame_start: datetime, 
                                               time_frame_end: datetime) -> float:
@@ -472,6 +474,8 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
         return 0.0
 
     return time_slots_with_enough_updates / len(amount_vehicle_positions_per_minute) * 100
+
+
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
