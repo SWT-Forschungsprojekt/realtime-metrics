@@ -79,8 +79,8 @@ def run_analysis():
         if len(trip_updates) == 0:
             continue
         trip_updates.sort(key=lambda u: u[0].timestamp.replace(tzinfo=timezone.utc).timestamp())
-        time_frame_start = int(trip_updates[0][0].timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
-        time_frame_end = int(trip_updates[-1][0].timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
+        time_frame_start = trip_updates[0][0].timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
+        time_frame_end = trip_updates[-1][0].timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
         trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
         availabilities.append(trip_availability)
 
@@ -372,9 +372,9 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
         trip_update = update[0]
 
         # get time in minutes by removing part of the timestamp responsible for seconds
-        time_rounded_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60) * 60
+        time_rounded_in_minutes = trip_update.timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
 
-        # skip, if outide of time frame
+        # skip, if outside of time frame
         if time_rounded_in_minutes < time_frame_start or time_rounded_in_minutes > time_frame_end:
             continue
 
