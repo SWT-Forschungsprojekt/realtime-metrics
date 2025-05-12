@@ -4,14 +4,14 @@ from optparse import OptionParser
 from typing import Dict
 from datetime import datetime, timezone, timedelta
 
-from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate
+from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate, VehiclePosition
 from sqlalchemy import create_engine, inspect, func
 from realtime_metrics.gtfsdb_models import StopTime
 from sqlalchemy.orm import sessionmaker
 
 import numpy
 
-def run_analysis():
+def run_stop_time_analysis():
     """
     get all stop time updates and compute the different metrics
     """
@@ -105,6 +105,40 @@ def run_analysis():
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
+
+def run_vehicle_position_analysis():
+    """
+    get all vehicle positions and compute the different metrics
+    """
+    vehicle_positions: dict[str, list[VehiclePosition]] = dict()
+    for vehicle_position in session.query(VehiclePosition).all():
+        if vehicle_position.trip_id not in vehicle_positions.keys():
+            vehicle_positions[vehicle_position.trip_id] = []
+        vehicle_positions[vehicle_position.trip_id].append(vehicle_position)
+    
+    min_max_timestamps: dict[str, tuple[datetime, datetime]] = dict()
+    # get for each trip the first and last arrival time
+    # for each trip in vehicle position get first and last arrival time
+    for vehicle_position_min_max in session.query(VehiclePosition.trip_id, func.min(VehiclePosition.timestamp).label('min_timestamp'), func.max(VehiclePosition.timestamp).label('max_timestamp')).group_by(VehiclePosition.trip_id).all():
+        min_timestamp = vehicle_position_min_max.min_timestamp.replace(tzinfo=timezone.utc)
+        max_timestamp = vehicle_position_min_max.max_timestamp.replace(tzinfo=timezone.utc)
+        min_max_timestamps[vehicle_position_min_max.trip_id] = (min_timestamp, max_timestamp)
+
+    availabilities: list[float] = [] 
+
+    for trip_id, vehicle_positions in vehicle_positions.items():
+        # get min and max timestamp for the trip
+        min_timestamp, max_timestamp = min_max_timestamps[trip_id]
+
+        # availability of acceptable vehicle positions ----------------------------------------------------------------------------------
+        availability_acceptable_vehicle_positions_result = availability_acceptable_vehicle_positions(vehicle_positions, min_timestamp, max_timestamp)
+        availabilities.append(availability_acceptable_vehicle_positions_result)
+
+    if len(availabilities) == 0:
+        availability_acceptable_vehicle_positions_result = 0
+    else:
+        availability_acceptable_vehicle_positions_result = numpy.mean(availabilities)
+    print(f"Availability of acceptable vehicle positions: {round(availability_acceptable_vehicle_positions_result, 2)}%")
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
@@ -326,7 +360,7 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
 
 def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]], 
                                               time_frame_start: int, 
-                                              time_frame_end: int):
+                                              time_frame_end: int) -> float:
     """
     Computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
@@ -352,7 +386,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
         # get time in minutes
         time_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60)
 
-        # skip, if outide of time frame
+        # skip, if outside of time frame
         if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
             continue
 
@@ -374,7 +408,61 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
 
     return (time_slots_with_enough_updates / number_of_time_slots) * 100
 
+def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePosition], 
+                                              time_frame_start: datetime, 
+                                              time_frame_end: datetime) -> float:
+    """
+    Computes the availability of acceptable vehicle position messages metrics for the given vehicle positions in the given time frame.
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.14woewhhbqwk. 
+    It computes the percentage of one-minute slots with two or more vehicle positions.
 
+    Parameters
+    ----------
+    vehicle_positions: list[VehiclePosition]
+        list of vehicle positions
+    time_frame_start: datetime
+        start of the time frame to observe, datetime in utc
+    time_frame_end: datetime
+        end of the time frame to observe, datetime in utc
+
+    Returns
+    -------
+    float
+        A float containing the percentage of one minute slots with two or more updates.
+    """
+    logger.debug("Time frame start: %s", time_frame_start)
+    logger.debug("Time frame end: %s", time_frame_end)
+
+    if len(vehicle_positions) == 0:
+        logger.info("No vehicle positions provided!")
+        return 0.0
+
+    # all vehicle positions for a given minute
+    amount_vehicle_positions_per_minute: dict[int, int] = dict()
+
+    for vehicle_position in vehicle_positions:
+        timestamp: datetime = vehicle_position.timestamp.replace(tzinfo=timezone.utc)
+
+        if timestamp < time_frame_start or timestamp > time_frame_end:
+            continue
+
+        minutes_since_time_frame_start = int((timestamp - time_frame_start).total_seconds() / 60)
+        if minutes_since_time_frame_start not in amount_vehicle_positions_per_minute.keys():
+            amount_vehicle_positions_per_minute[minutes_since_time_frame_start] = 0
+        amount_vehicle_positions_per_minute[minutes_since_time_frame_start] += 1
+
+    time_slots_with_enough_updates = 0
+
+    for minute, amount_of_updates in amount_vehicle_positions_per_minute.items():
+        if amount_of_updates >= 2:
+            time_slots_with_enough_updates += 1
+
+
+    if len(amount_vehicle_positions_per_minute) == 0:
+        logger.info("No vehicle positions fall within the specified time frame!")
+        return 0.0
+
+    return time_slots_with_enough_updates / len(amount_vehicle_positions_per_minute) * 100
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
@@ -551,6 +639,8 @@ if __name__ == "__main__":
                 action='store_true', help='Print generated SQL')
     option_parser.add_option('-q', '--quiet', default=False, dest='quiet',
                 action='store_true', help="Don't print warnings and status messages")
+    option_parser.add_option('-a', '--analysis', default='stop_time', dest='analysis',
+                help="The analysis to run. Can be 'stop_time' or 'vehicle_position'")
     options, arguments = option_parser.parse_args()
 
     # TODO: add option to choose debug logs
@@ -594,4 +684,12 @@ if __name__ == "__main__":
 
     logger.info("Successfully connected to database")
     
-    run_analysis()
+    if options.analysis == 'stop_time':
+        print("Running stop time analysis...")
+        run_stop_time_analysis()
+    elif options.analysis == 'vehicle_position':
+        print("Running vehicle position analysis...")
+        run_vehicle_position_analysis()
+    else:
+        logger.error("Unknown analysis type %s", options.analysis)
+        exit(1)
