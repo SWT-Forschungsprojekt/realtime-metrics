@@ -26,9 +26,6 @@ def run_stop_time_analysis():
 
     trips: Dict[tuple[str, str, str], list[tuple[TripUpdate, StopTimeUpdate]]]  = dict()
 
-    time_frame_start = sys.maxsize
-    time_frame_end = 0
-
     for tripUpdate in tripUpdates:
         trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).order_by(TripUpdate.route_id.desc(), TripUpdate.trip_id.desc(), StopTimeUpdate.stop_id.desc()).all()
         for trip_stop_time_update in trip_stop_time_updates:
@@ -78,7 +75,12 @@ def run_stop_time_analysis():
     availabilities = []
     
     for trip_id in trips.keys():
-        trip_updates = trips[trip_id]
+        trip_updates: list[tuple[TripUpdate, StopTimeUpdate]] = trips[trip_id]
+        if len(trip_updates) == 0:
+            continue
+        trip_updates.sort(key=lambda u: u[0].timestamp.replace(tzinfo=timezone.utc).timestamp())
+        time_frame_start = trip_updates[0][0].timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
+        time_frame_end = trip_updates[-1][0].timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
         trip_availability = availability_acceptable_stop_time_updates(trip_updates, time_frame_start, time_frame_end)
         availabilities.append(trip_availability)
 
@@ -105,6 +107,7 @@ def run_stop_time_analysis():
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
+
 
 def run_vehicle_position_analysis():
     """
@@ -139,6 +142,7 @@ def run_vehicle_position_analysis():
     else:
         availability_acceptable_vehicle_positions_result = numpy.mean(availabilities)
     print(f"Availability of acceptable vehicle positions: {round(availability_acceptable_vehicle_positions_result, 2)}%")
+
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
@@ -366,13 +370,19 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
     It computes the percentage of one-minute slots with two or more updates.
 
-    Parameters:
-    stop_time_updates: list of corresponding trip updates and stop time updates
-    time_frame_start: start of the time frame to observe, in minutes since 1970
-    time_frame_end: end of the time frame to observe, in minutes since 1970
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]
+        list of corresponding trip updates and stop time updates
+    time_frame_start : int
+        start of the time frame to observe, in seconds since 1970
+    time_frame_end : int 
+        end of the time frame to observe, in seconds since 1970
 
-    Returns:
-    A float containing the percentage of one minute slots with two or more updates.
+    Returns
+    -------
+    float
+        The percentage of one minute slots with two or more updates.
     """
     logger.debug("Time frame start: %s", time_frame_start)
     logger.debug("Time frame end: %s", time_frame_end)
@@ -383,21 +393,21 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     for update in stop_time_updates:
         trip_update = update[0]
 
-        # get time in minutes
-        time_in_minutes = int(trip_update.timestamp.replace(tzinfo=timezone.utc).timestamp() / 60)
+        # get time in minutes by removing part of the timestamp responsible for seconds
+        time_rounded_in_minutes = trip_update.timestamp.replace(tzinfo=timezone.utc).replace(second=0).timestamp()
 
         # skip, if outside of time frame
-        if time_in_minutes < time_frame_start or time_in_minutes > time_frame_end:
+        if time_rounded_in_minutes < time_frame_start or time_rounded_in_minutes > time_frame_end:
             continue
 
         # increase respective stop time counter
-        if time_in_minutes not in time_slots.keys():
-            time_slots[time_in_minutes] = 1
+        if time_rounded_in_minutes not in time_slots.keys():
+            time_slots[time_rounded_in_minutes] = 1
         else:
-            time_slots[time_in_minutes] = time_slots[time_in_minutes] + 1
+            time_slots[time_rounded_in_minutes] = time_slots[time_rounded_in_minutes] + 1
 
     # calculate percentage of minutes with two or more stop time updates
-    number_of_time_slots = time_frame_end - time_frame_start + 1
+    number_of_time_slots = int(time_frame_end / 60) - int(time_frame_start / 60) + 1
     logger.debug("Time slots: %s", number_of_time_slots)
 
     time_slots_with_enough_updates = 0
@@ -407,6 +417,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     logger.debug("Time slots with enough updates: %s", time_slots_with_enough_updates)
 
     return (time_slots_with_enough_updates / number_of_time_slots) * 100
+
 
 def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePosition], 
                                               time_frame_start: datetime, 
@@ -463,6 +474,8 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
         return 0.0
 
     return time_slots_with_enough_updates / len(amount_vehicle_positions_per_minute) * 100
+
+
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
@@ -639,15 +652,18 @@ if __name__ == "__main__":
                 action='store_true', help='Print generated SQL')
     option_parser.add_option('-q', '--quiet', default=False, dest='quiet',
                 action='store_true', help="Don't print warnings and status messages")
+    option_parser.add_option('--debug', default=False, dest='debug',
+                action='store_true', help="Print debug logs")
     option_parser.add_option('-a', '--analysis', default='stop_time', dest='analysis',
                 help="The analysis to run. Can be 'stop_time' or 'vehicle_position'")
     options, arguments = option_parser.parse_args()
 
-    # TODO: add option to choose debug logs
     if options.quiet:
         level = logging.ERROR
     elif options.verbose:
         level = logging.INFO
+    elif options.debug:
+        level = logging.DEBUG
     else:
         level = logging.WARNING
     # Set up a logger
