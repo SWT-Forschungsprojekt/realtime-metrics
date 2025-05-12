@@ -429,13 +429,19 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
     The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.14woewhhbqwk. 
     It computes the percentage of one-minute slots with two or more vehicle positions.
 
-    Parameters:
-    vehicle_positions: list of vehicle positions
-    time_frame_start: start of the time frame to observe, datetime in utc
-    time_frame_end: end of the time frame to observe, datetime in utc
+    Parameters
+    ----------
+    vehicle_positions: list[VehiclePosition]
+        list of vehicle positions
+    time_frame_start: datetime
+        start of the time frame to observe, datetime in utc
+    time_frame_end: datetime
+        end of the time frame to observe, datetime in utc
 
-    Returns:
-    A float containing the percentage of one minute slots with two or more updates.
+    Returns
+    -------
+    float
+        A float containing the percentage of one minute slots with two or more updates.
     """
     logger.debug("Time frame start: %s", time_frame_start)
     logger.debug("Time frame end: %s", time_frame_end)
@@ -445,7 +451,7 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
         return 0.0
 
     # all vehicle positions for a given minute
-    vehicle_positions_time: dict[int, list[VehiclePosition]] = dict()
+    amount_vehicle_positions_per_minute: dict[int, int] = dict()
 
     for vehicle_position in vehicle_positions:
         timestamp: datetime = vehicle_position.timestamp.replace(tzinfo=timezone.utc)
@@ -454,22 +460,22 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
             continue
 
         minutes_since_time_frame_start = int((timestamp - time_frame_start).total_seconds() / 60)
-        if minutes_since_time_frame_start not in vehicle_positions_time.keys():
-            vehicle_positions_time[minutes_since_time_frame_start] = []
-        vehicle_positions_time[minutes_since_time_frame_start].append(vehicle_position)
+        if minutes_since_time_frame_start not in amount_vehicle_positions_per_minute.keys():
+            amount_vehicle_positions_per_minute[minutes_since_time_frame_start] = 0
+        amount_vehicle_positions_per_minute[minutes_since_time_frame_start] += 1
 
     time_slots_with_enough_updates = 0
 
-    for minute, positions in vehicle_positions_time.items():
-        if len(positions) >= 2:
+    for minute, amount_of_updates in amount_vehicle_positions_per_minute.items():
+        if amount_of_updates >= 2:
             time_slots_with_enough_updates += 1
 
 
-    if len(vehicle_positions_time) == 0:
+    if len(amount_vehicle_positions_per_minute) == 0:
         logger.info("No vehicle positions fall within the specified time frame!")
         return 0.0
 
-    return time_slots_with_enough_updates / len(vehicle_positions_time) * 100
+    return time_slots_with_enough_updates / len(amount_vehicle_positions_per_minute) * 100
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
