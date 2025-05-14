@@ -13,7 +13,13 @@ import numpy
 
 def run_stop_time_analysis():
     """
-    get all stop time updates and compute the different metrics
+    Fetches all stop times and corresponding trip updates, computes the following metrics and prints their results to the console:
+    - accuracy using mean squared error
+    - ETA accuracy (defined here: https://github.com/TransitApp/ETA-Accuracy-Benchmark)
+    - experienced wait time delay (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
+    - availability of acceptable stop time updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
+    - prediction reliability (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
+    - prediction inconsistency (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
     """
     stoptimes = session.query(StopTime.trip_id, func.min(StopTime.arrival_time).label('min_arrival_time')).group_by(StopTime.trip_id)
 
@@ -111,7 +117,8 @@ def run_stop_time_analysis():
 
 def run_vehicle_position_analysis():
     """
-    get all vehicle positions and compute the different metrics
+    Fetches all vehicle positions, computes the following metrics and prints their results to the console:
+    - availability of acceptable vehicle updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
     """
     vehicle_positions: dict[str, list[VehiclePosition]] = dict()
     for vehicle_position in session.query(VehiclePosition).all():
@@ -146,7 +153,19 @@ def run_vehicle_position_analysis():
 
 def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
-    computes the accuracy of the given stop time updates using mean squared error
+    Computes the accuracy of the given stop time updates using mean squared error. 
+    Stop time updates with unknown actual arrival time are omitted.
+
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]
+        a list of StopTimeUpdates with the corresponding TripUpdate
+    
+    Returns
+    -------
+    float | None
+        A float containing the mean squared deviation of the true arrival time. 
+        None, if an empty list is provided or no true arrival times are known.
     """
 
     if len(stop_time_updates) <= 0:
@@ -180,7 +199,24 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
 
 def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
-    computes the accuracy of the given stop time updates using the eta bucketing approach
+    Computes the accuracy of the given stop time updates using the ETA bucketing approach.
+    The metric is defined here: https://github.com/TransitApp/ETA-Accuracy-Benchmark.
+    It sorts the stop time updates into buckets based on how much time is left until the arrival.
+    In each bucket, the allowed to be within a different range around the true arrival time.
+    Samples within this range are labeled 'accurate', the others 'inaccurate'.
+    For each bucket, the percentage of accurate updates is computed.
+    The ETA accuracy is then defined as the mean accuracy of all buckets.
+
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]
+        a list of StopTimeUpdates with the corresponding TripUpdate
+    
+    Returns
+    -------
+    float | None
+        A float containing the mean squared deviation of the true arrival time. 
+        None, if an empty list is provided or no stop time updates are within the valid range of the buckets.
     """
 
     # initialize buckets with zero correct and incorrect samples each
@@ -268,6 +304,19 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
     """
     Returns the actual arrival time for the route and stop of the given TripUpdate.
     If no actual arrival time is known, None is returned.
+
+    Parameters
+    ----------
+    trip_update : TripUpdate
+        the TripUpdate that published the StopTimeUpdate
+    stop_time_update : StopTimeUpdate
+        the StopTimeUpdate for the concrete stop
+
+    Returns
+    -------
+    int | None
+        An int containing the unix timestamp (in seconds) of the actual arrival time.
+        None, if no actual arrival time is known.
     """
     key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
     if key in actual_arrival_times.keys():
@@ -284,11 +333,16 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
     It computes the average amount of time in minutes a passenger has to wait at a stop, 
     if he arrives at the arrival time of the most up-to-date stop time update.
 
-    Parameters:
-    stop_time_updates: list of corresponding trip updates and stop time updates
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]]
+        list of corresponding trip updates and stop time updates
 
-    Returns:
-    A float containing the average wait time.
+    Returns
+    -------
+    float | None
+        A float containing the average wait time. 
+        None, if no experienced wait time could be computed.
     """
     logger.info("Calculating Experienced Wait Time Delay...")
 
@@ -479,7 +533,19 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
 def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> tuple[TripUpdate, StopTimeUpdate] | None:
     """
     Returns the last stop time update in the given list, that what published before or at the given timestamp.
-    If no such stop time update is in the list, None is returned.
+
+    Parameters
+    ----------
+    timestamp : int
+        An unix timestamp (in seconds) restricting which stop time updates are in the past
+    updates : list[tuple[TripUpdate, StopTimeUpdate]]
+        A list of StopTimeUpdates and corresponding TripUpdates to find the last before the timestamp
+    
+    Returns
+    -------
+    tuple[TripUpdate, StopTimeUpdate] | None
+        The last StopTimeUpdate published before or at the timestamp, with its corresponding TripUpdate.
+        None, if no such StopTimeUpdate is found.
     """
     updates_before_timestamp = [update for update in updates if update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() <= timestamp and update[1].arrival_time > 0]
     if len(updates_before_timestamp) <= 0:
@@ -493,6 +559,15 @@ def get_last_predicted_update(timestamp: int, updates: list[tuple[TripUpdate, St
 def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> StopTimeUpdate | None:
     """
     Returns the stop time update containing the next actual arrival time for the given route and stop after the given timestamp.
+    
+    Parameters
+    ----------
+    timestamp : int
+        An unix timestamp (in seconds) defining the lower boundary to consider stop time updates.
+    route_id : str
+        The route to get the next actual arrival time of.
+    stop_id : str
+        The stop (of the route) to get the next actual arrival time of.
     """
     actual_arrivals: list[StopTimeUpdate] = []
     # collect all actual arrivals after the given timestamp
@@ -517,11 +592,15 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     Whether or not a stop time update counts as reliable depends on the deviation of the predicted arrival time from the actual arrival time, 
     as well as how far in the future the prediction is.
 
-    Parameters:
-    stop_time_updates: list of corresponding trip updates and stop time updates
+    Parameters
+    ----------
+    stop_time_updates : list[tuple[TripUpdate, StopTimeUpdate]]
+        list of corresponding trip updates and stop time updates
 
-    Returns:
-    A float containing the prediction reliability.
+    Returns
+    -------
+    float
+        A float containing the prediction reliability.
     """
     logger.debug(f"amount of updates: {len(stop_time_updates)}")
     if len(stop_time_updates) == 0:
@@ -598,12 +677,17 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     It computes the spread as the difference of the minimal and maximal predicted arrival time in each time frame. 
     The prediction inconsistency is then the average spread of all windows.
 
-    Parameters:
-    actual_arrival_time: the actual arrival time of the vehicle (for that route, trip and stop)
-    updates: list of corresponding trip updates and stop time updates (for that route, trip and stop)
+    Parameters
+    ----------
+    actual_arrival_time : int
+        An unix timestamp (in seconds), containing the actual arrival time of the vehicle (for that route, trip and stop)
+    updates : list[tuple[TripUpdate, StopTimeUpdate]]
+        list of corresponding trip updates and stop time updates (for that route, trip and stop)
 
-    Returns:
-    A float containing the prediction inconsistency.
+    Returns
+    -------
+    float
+        A float containing the prediction inconsistency.
     """
     thirty_one_minutes_earlier = actual_arrival_time - 1860 # 31 minutes to fit 30 time windows of 2 minutes, starting every minute
     valid_updates = [update for update in updates if update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() >= thirty_one_minutes_earlier]
