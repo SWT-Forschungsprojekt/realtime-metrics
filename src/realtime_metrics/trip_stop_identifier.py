@@ -1,7 +1,7 @@
 
 class TripStopIdentifier:
     """
-    A class to uniquely identify a trip and stop, even accross multiple days.
+    A class to uniquely identify the event of a vehicle of a trip halting at a stop. This is unique across an arbitrary time span
     It contains the trip_start_date, route_id, trip_id and stop_id.
     """
     def __init__(self, trip_start_date: str, route_id: str, trip_id: str, stop_id: str):
