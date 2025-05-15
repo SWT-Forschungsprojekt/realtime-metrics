@@ -1,7 +1,7 @@
 # Resource Usage
 
 The `monitor.py` script can monitor a PID and log its CPU and memory usage to a CSV file.
-Make sure following packages are installed:
+Make sure the following packages are installed:
 ```bash
 pip install psutil
 ```
