@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate, VehiclePosition
 from sqlalchemy import create_engine, inspect, func
 from realtime_metrics.gtfsdb_models import StopTime
+from realtime_metrics.trip_stop_identifier import TripStopIdentifier
 from sqlalchemy.orm import sessionmaker
 
 import numpy
@@ -24,7 +25,7 @@ def run_stop_time_analysis():
 
     stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
 
-    trips: Dict[tuple[str, str, str], list[tuple[TripUpdate, StopTimeUpdate]]]  = dict()
+    trips: Dict[TripStopIdentifier, list[tuple[TripUpdate, StopTimeUpdate]]]  = dict()
 
     for tripUpdate in tripUpdates:
         trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(TripUpdate).filter(TripUpdate.trip_id == tripUpdate.trip_id).filter(StopTimeUpdate.arrival_time > 0).order_by(TripUpdate.route_id.desc(), TripUpdate.trip_id.desc(), StopTimeUpdate.stop_id.desc()).all()
@@ -33,22 +34,19 @@ def run_stop_time_analysis():
 
             # add stop time update to trips
             stop_time_update: StopTimeUpdate = trip_stop_time_update.StopTimeUpdate
-            key = (tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
-            if key in trips.keys():
-                trip_updates: list[TripUpdate] = trips[key]
-            else:
-                trip_updates: list[TripUpdate] = []
-            trip_updates.append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
-            trips[key] = trip_updates
+            trip_stop_identifier = TripStopIdentifier(tripUpdate.trip_start_date, tripUpdate.route_id, tripUpdate.trip_id, stop_time_update.stop_id)
+            if trip_stop_identifier not in trips.keys():
+                trips[trip_stop_identifier] = []
+            trips[trip_stop_identifier].append((trip_stop_time_update.TripUpdate, trip_stop_time_update.StopTimeUpdate))
 
             # add stop_time_update to dictionary if not present or update if timestamp of tripUpdate is newer than the one in the dictionary
             if stop_time_update.arrival_uncertainty > 0:
                 continue # only consider updates with arrival uncertainty 0 as actual arrivals
-            if key in actual_arrival_times.keys():
-                if trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp() > actual_arrival_times[key][0]:
-                    actual_arrival_times[key] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
+            if trip_stop_identifier in actual_arrival_times.keys():
+                if trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp() > actual_arrival_times[trip_stop_identifier][0]:
+                    actual_arrival_times[trip_stop_identifier] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
             else:
-                actual_arrival_times[key] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
+                actual_arrival_times[trip_stop_identifier] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
 
     # MSE accuracy ------------------------------------------------------------------------------------------------------------------
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
@@ -74,8 +72,8 @@ def run_stop_time_analysis():
     # availability of acceptable stop time updates ----------------------------------------------------------------------------------
     availabilities = []
     
-    for trip_id in trips.keys():
-        trip_updates: list[tuple[TripUpdate, StopTimeUpdate]] = trips[trip_id]
+    for trip_stop_identifier in trips.keys():
+        trip_updates: list[tuple[TripUpdate, StopTimeUpdate]] = trips[trip_stop_identifier]
         if len(trip_updates) == 0:
             continue
         trip_updates.sort(key=lambda u: u[0].timestamp.replace(tzinfo=timezone.utc).timestamp())
@@ -98,12 +96,12 @@ def run_stop_time_analysis():
     # prediction inconsistency ------------------------------------------------------------------------------------------------------
     inconsistencies = []
 
-    for trip_stop in actual_arrival_times.keys():
-        actual_arrival_time = actual_arrival_times[trip_stop][1].arrival_time
-        updates = trips[trip_stop]
+    for trip_stop_identifier in actual_arrival_times.keys():
+        actual_arrival_time = actual_arrival_times[trip_stop_identifier][1].arrival_time
+        updates = trips[trip_stop_identifier]
         inconsistency = prediction_inconsistency(actual_arrival_time, updates)
         inconsistencies.append(inconsistency)
-        logger.debug(f"Prediction inconsistency for route {trip_stop[0]}, trip {trip_stop[1]}, stop {trip_stop[2]}: {round(inconsistency, 2)} seconds")
+        logger.debug(f"Prediction inconsistency for route {trip_stop_identifier.route_id}, trip {trip_stop_identifier.trip_id}, stop {trip_stop_identifier.stop_id}: {round(inconsistency, 2)} seconds")
 
     prediction_inconsistency_result = numpy.mean(inconsistencies)
     print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
@@ -269,9 +267,9 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
     Returns the actual arrival time for the route and stop of the given TripUpdate.
     If no actual arrival time is known, None is returned.
     """
-    key = (trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
-    if key in actual_arrival_times.keys():
-        newest_stop_time_update: StopTimeUpdate = actual_arrival_times[key][1]
+    trip_stop_identifier = TripStopIdentifier(trip_update.trip_start_date, trip_update.route_id, trip_update.trip_id, stop_time_update.stop_id)
+    if trip_stop_identifier in actual_arrival_times.keys():
+        newest_stop_time_update: StopTimeUpdate = actual_arrival_times[trip_stop_identifier][1]
         return newest_stop_time_update.arrival_time
     else:
         return None
@@ -298,11 +296,10 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
 
     indexed_updates: Dict[tuple[str, str], list[tuple[TripUpdate, StopTimeUpdate]]] = {}
 
-    for key in actual_arrival_times.keys():
-        logger.debug("Key: %s", key)
-        route_id, _, stop_id = key
+    for trip_stop_identifier in actual_arrival_times.keys():
+        logger.debug("Key: %s", trip_stop_identifier)
         
-        new_key = (route_id, stop_id)
+        new_key = (trip_stop_identifier.route_id, trip_stop_identifier.stop_id)
 
         indexed_updates[new_key] = []
 
@@ -411,8 +408,8 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     logger.debug("Time slots: %s", number_of_time_slots)
 
     time_slots_with_enough_updates = 0
-    for key in time_slots.keys():
-        if time_slots[key] >= 2:
+    for time_slot in time_slots.keys():
+        if time_slots[time_slot] >= 2:
             time_slots_with_enough_updates += 1
     logger.debug("Time slots with enough updates: %s", time_slots_with_enough_updates)
 
@@ -468,7 +465,6 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
         if amount_of_updates >= 2:
             time_slots_with_enough_updates += 1
 
-
     if len(amount_vehicle_positions_per_minute) == 0:
         logger.info("No vehicle positions fall within the specified time frame!")
         return 0.0
@@ -496,8 +492,8 @@ def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> Stop
     """
     actual_arrivals: list[StopTimeUpdate] = []
     # collect all actual arrivals after the given timestamp
-    for key, update in actual_arrival_times.items():
-        if key[0] == route_id and key[2] == stop_id:
+    for trip_stop_identifier, update in actual_arrival_times.items():
+        if trip_stop_identifier.route_id == route_id and trip_stop_identifier.stop_id == stop_id:
             stop_time_update: StopTimeUpdate = update[1]
             if stop_time_update.arrival_time >= timestamp:
                 actual_arrivals.append(stop_time_update)
@@ -685,10 +681,10 @@ if __name__ == "__main__":
     session = sessionmaker(bind=engine)()
 
     # dict for newest stop time update
-    actual_arrival_times: Dict[tuple[str, str, str], tuple[int, StopTimeUpdate]] = dict()
+    actual_arrival_times: Dict[TripStopIdentifier, tuple[int, StopTimeUpdate]] = dict()
 
     # dict for trip stop times (gtfsdb)
-    first_trip_arrival_times: Dict[tuple[str, str], str] = dict()
+    first_trip_arrival_times: Dict[str, str] = dict()
 
     # Check if it has the tables
     # Base from model.py
