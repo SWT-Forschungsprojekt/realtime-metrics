@@ -16,10 +16,10 @@ def run_stop_time_analysis():
     Fetches all stop times and corresponding trip updates, computes the following metrics and prints their results to the console:
     - accuracy using mean squared error
     - ETA accuracy (defined here: https://github.com/TransitApp/ETA-Accuracy-Benchmark)
-    - experienced wait time delay (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
-    - availability of acceptable stop time updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
-    - prediction reliability (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
-    - prediction inconsistency (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
+    - experienced wait time delay (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.yxonst7620cc)
+    - availability of acceptable stop time updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.opcobjkpjpd5)
+    - prediction reliability (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.jxkc7wix2vyb)
+    - prediction inconsistency (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.uzxz2nt2mgh0)
     """
     stoptimes = session.query(StopTime.trip_id, func.min(StopTime.arrival_time).label('min_arrival_time')).group_by(StopTime.trip_id)
 
@@ -118,7 +118,7 @@ def run_stop_time_analysis():
 def run_vehicle_position_analysis():
     """
     Fetches all vehicle positions, computes the following metrics and prints their results to the console:
-    - availability of acceptable vehicle updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU)
+    - availability of acceptable vehicle updates (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.14woewhhbqwk)
     """
     vehicle_positions: dict[str, list[VehiclePosition]] = dict()
     for vehicle_position in session.query(VehiclePosition).all():
@@ -329,7 +329,7 @@ def get_actual_arrival_time(trip_update: TripUpdate, stop_time_update: StopTimeU
 def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float | None:
     """
     Computes the average Experienced Wait Time Delay metrics for the given stop time updates.
-    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.yxonst7620cc. 
     It computes the average amount of time in minutes a passenger has to wait at a stop, 
     if he arrives at the arrival time of the most up-to-date stop time update.
 
@@ -421,7 +421,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
                                               time_frame_end: int) -> float:
     """
     Computes the availability of acceptable stop time updates metrics for the given stop time updates in the given time frame.
-    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.opcobjkpjpd5. 
     It computes the percentage of one-minute slots with two or more updates.
 
     Parameters
@@ -587,7 +587,7 @@ def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> Stop
 def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
     """
     Computes the prediction reliability metrics for a route, trip and stop combination.
-    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.jxkc7wix2vyb. 
     It computes the percentage of stop time updates classified as reliable.
     Whether or not a stop time update counts as reliable depends on the deviation of the predicted arrival time from the actual arrival time, 
     as well as how far in the future the prediction is.
@@ -672,7 +672,7 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
 def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> float:
     """
     Computes the prediction inconsistency metrics for a route, trip and stop combination.
-    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU. 
+    The metric is defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.uzxz2nt2mgh0. 
     It computes the predicted arrival time spread in 30 two minute time frames, starting every minute.
     It computes the spread as the difference of the minimal and maximal predicted arrival time in each time frame. 
     The prediction inconsistency is then the average spread of all windows.
