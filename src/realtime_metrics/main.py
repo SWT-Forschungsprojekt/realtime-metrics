@@ -463,7 +463,7 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     logger.debug("Time frame end: %s", time_frame_end)
 
     if len(stop_time_updates) == 0:
-        logger.warning("No stop time updates provided!")
+        logger.debug("No stop time updates provided!")
         return 0.0
 
     # dict to store how many stop time updates are available for each minute slot
@@ -524,7 +524,7 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
     logger.debug("Time frame end: %s", time_frame_end)
 
     if len(vehicle_positions) == 0:
-        logger.warning("No vehicle positions provided!")
+        logger.debug("No vehicle positions provided!")
         return 0.0
 
     # all vehicle positions for a given minute
@@ -546,7 +546,6 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
     for minute, amount_of_updates in amount_vehicle_positions_per_minute.items():
         if amount_of_updates >= 2:
             time_slots_with_enough_updates += 1
-
 
     if len(amount_vehicle_positions_per_minute) == 0:
         logger.info("No vehicle positions fall within the specified time frame!")
@@ -719,7 +718,7 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     valid_updates = [update for update in updates if update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() >= thirty_one_minutes_earlier]
 
     if len(valid_updates) == 0:
-        logger.warning("No stop time updates provided!")
+        logger.debug("No stop time updates provided!")
         return 0.0 # no inconsistency, if no updates in the last 31 minutes
     
     two_minutes_earlier = actual_arrival_time - 120
@@ -749,7 +748,7 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     logger.debug(spreads)
 
     if len(spreads) == 0:
-        logger.warning("No valid updates provided!")
+        logger.debug("No valid updates provided!")
         return 0.0
     
     average_spread = numpy.mean(spreads)
