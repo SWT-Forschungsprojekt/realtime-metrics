@@ -57,6 +57,8 @@ def run_stop_time_analysis():
                 actual_arrival_times[key] = (trip_stop_time_update.TripUpdate.timestamp.replace(tzinfo=timezone.utc).timestamp(), stop_time_update)
 
     # MSE accuracy ------------------------------------------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing MSE accuracy ...")
     mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     if mse_accuracy_result is None:
         print("MSE accuracy could not be computed, no data provided!")
@@ -64,6 +66,8 @@ def run_stop_time_analysis():
         print("MSE accuracy: ", round(mse_accuracy_result, 2))
 
     # ETA accuracy ------------------------------------------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing ETA accuracy ...")
     eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
@@ -71,6 +75,8 @@ def run_stop_time_analysis():
         print(f"ETA accuracy: {round(eta_accuracy_result, 2)}%")
 
     # experienced wait time delay ---------------------------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing experienced wait time delay ...")
     experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
@@ -78,6 +84,8 @@ def run_stop_time_analysis():
         print(f"Experienced Wait Time Delay: {round(experienced_wait_time_delay_result, 2)} seconds")
 
     # availability of acceptable stop time updates ----------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing availability of acceptable stop time updates ...")
     availabilities = []
     
     for trip_id in trips.keys():
@@ -92,16 +100,21 @@ def run_stop_time_analysis():
 
     if len(availabilities) == 0:
         availability_acceptable_stop_time_updates_result = 0
+        print("No stop time updates provided!")
     else:
         availability_acceptable_stop_time_updates_result = sum(availabilities) / len(availabilities)
 
     print(f"Availability of acceptable stop time updates: {round(availability_acceptable_stop_time_updates_result, 2)}%")
 
     # prediction reliability --------------------------------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing prediction reliability ...")
     prediction_reliability_result = prediction_reliability(stop_time_updates)
     print(f"Prediction reliability: {round(prediction_reliability_result * 100, 2)}%")
 
     # prediction inconsistency ------------------------------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing prediction inconsistency ...")
     inconsistencies = []
 
     for trip_stop in actual_arrival_times.keys():
@@ -111,8 +124,11 @@ def run_stop_time_analysis():
         inconsistencies.append(inconsistency)
         logger.debug(f"Prediction inconsistency for route {trip_stop[0]}, trip {trip_stop[1]}, stop {trip_stop[2]}: {round(inconsistency, 2)} seconds")
 
-    prediction_inconsistency_result = numpy.mean(inconsistencies)
-    print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
+    if len(inconsistencies) == 0:
+        print(f"Prediction inconsistency: could not be computed, no data provided!")
+    else:
+        prediction_inconsistency_result = numpy.mean(inconsistencies)
+        print(f"Prediction inconsistency: {round(prediction_inconsistency_result, 2)} seconds")
 
 
 def run_vehicle_position_analysis():
@@ -134,6 +150,9 @@ def run_vehicle_position_analysis():
         max_timestamp = vehicle_position_min_max.max_timestamp.replace(tzinfo=timezone.utc)
         min_max_timestamps[vehicle_position_min_max.trip_id] = (min_timestamp, max_timestamp)
 
+    # availability of acceptable vehicle position updates ----------------------------------------------------------------------------------
+    print("---------------------------------------------------------------------------")
+    print("Computing availability of acceptable vehicle position updates ...")
     availabilities: list[float] = [] 
 
     for trip_id, vehicle_positions in vehicle_positions.items():
@@ -146,6 +165,7 @@ def run_vehicle_position_analysis():
 
     if len(availabilities) == 0:
         availability_acceptable_vehicle_positions_result = 0
+        print("No vehicle positions provided!")
     else:
         availability_acceptable_vehicle_positions_result = numpy.mean(availabilities)
     print(f"Availability of acceptable vehicle positions: {round(availability_acceptable_vehicle_positions_result, 2)}%")
@@ -186,7 +206,7 @@ def mse_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
 
     # compute MSE
     if len(samples) == 0:
-        logger.info("No data provided!")
+        logger.warning("No data provided!")
         return None
 
     sum = 0.0
@@ -294,8 +314,9 @@ def eta_accuracy(stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]]) -> 
 
     # compute total accuracy
     if len(accuracies) == 0:
-        logger.info("No data provided!")
+        logger.warning("No samples in any bucket!")
         return None
+    
     mean_accuracy = numpy.mean(accuracies) * 100
     return mean_accuracy
 
@@ -408,7 +429,7 @@ def experienced_wait_time_delay(trip_stop_time_updates: list[tuple[TripUpdate, S
             delays.append(delay)
 
     if len(delays) <= 0:
-        logger.info("No delay samples found.")
+        logger.warning("No delay samples found.")
         return None
 
     logger.debug("Delays: %s", delays)    
@@ -440,6 +461,10 @@ def availability_acceptable_stop_time_updates(stop_time_updates: list[tuple[Trip
     """
     logger.debug("Time frame start: %s", time_frame_start)
     logger.debug("Time frame end: %s", time_frame_end)
+
+    if len(stop_time_updates) == 0:
+        logger.warning("No stop time updates provided!")
+        return 0.0
 
     # dict to store how many stop time updates are available for each minute slot
     time_slots: Dict[int, int] = dict()
@@ -499,7 +524,7 @@ def availability_acceptable_vehicle_positions(vehicle_positions: list[VehiclePos
     logger.debug("Time frame end: %s", time_frame_end)
 
     if len(vehicle_positions) == 0:
-        logger.info("No vehicle positions provided!")
+        logger.warning("No vehicle positions provided!")
         return 0.0
 
     # all vehicle positions for a given minute
@@ -604,6 +629,7 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     """
     logger.debug(f"amount of updates: {len(stop_time_updates)}")
     if len(stop_time_updates) == 0:
+        logger.warning("No stop time updates provided!")
         return 0.0 # no stop time updates are not reliable
     
     reliable_updates = 0
@@ -663,7 +689,7 @@ def prediction_reliability(stop_time_updates: list[tuple[TripUpdate, StopTimeUpd
     total = reliable_updates + unreliable_updates
 
     if total == 0:
-        logger.info("No valid updates provided!")
+        logger.warning("No valid updates provided!")
         return 0.0 # no stop time updates are not reliable
     
     return reliable_updates / total
@@ -693,6 +719,7 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     valid_updates = [update for update in updates if update[0].timestamp.replace(tzinfo=timezone.utc).timestamp() >= thirty_one_minutes_earlier]
 
     if len(valid_updates) == 0:
+        logger.warning("No stop time updates provided!")
         return 0.0 # no inconsistency, if no updates in the last 31 minutes
     
     two_minutes_earlier = actual_arrival_time - 120
@@ -722,6 +749,7 @@ def prediction_inconsistency(actual_arrival_time: int, updates: list[tuple[TripU
     logger.debug(spreads)
 
     if len(spreads) == 0:
+        logger.warning("No valid updates provided!")
         return 0.0
     
     average_spread = numpy.mean(spreads)
