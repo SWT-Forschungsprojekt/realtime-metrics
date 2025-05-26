@@ -7,9 +7,8 @@ from collections import defaultdict
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate, VehiclePosition
 from sqlalchemy import create_engine, inspect, func
-from realtime_metrics.gtfsdb_models import StopTime
 from realtime_metrics.trip_stop_identifier import TripStopIdentifier
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Load
 
 import numpy
 
@@ -23,28 +22,35 @@ def run_stop_time_analysis():
     - prediction reliability (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.jxkc7wix2vyb)
     - prediction inconsistency (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.uzxz2nt2mgh0)
     """
-    stoptimes = session.query(
-        StopTime.trip_id,
-        func.min(StopTime.arrival_time).label('min_arrival_time')
-    ).group_by(StopTime.trip_id).all()
+    
+    stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
+    trips: dict = defaultdict(list)
 
-    trip_updates = session.query(TripUpdate).all()
-
-    trip_stop_time_updates = session.query(StopTimeUpdate, TripUpdate).join(
-        TripUpdate, StopTimeUpdate.trip_update_id == TripUpdate.oid
+    # Stream StopTimeUpdate + TripUpdate pairs from DB in chunks
+    query = session.query(StopTimeUpdate, TripUpdate).join(
+    TripUpdate, StopTimeUpdate.trip_update_id == TripUpdate.oid
+    ).options(
+        Load(TripUpdate).load_only(
+            TripUpdate.trip_id,
+            TripUpdate.route_id,
+            TripUpdate.trip_start_date,
+            TripUpdate.timestamp
+        ),
+        Load(StopTimeUpdate).load_only(
+            StopTimeUpdate.stop_id,
+            StopTimeUpdate.arrival_time,
+            StopTimeUpdate.arrival_uncertainty
+        )
     ).filter(
         StopTimeUpdate.arrival_time > 0
     ).order_by(
         TripUpdate.route_id.desc(),
         TripUpdate.trip_id.desc(),
         StopTimeUpdate.stop_id.desc()
-    ).all()
+    ).yield_per(1000)
 
-    # build the stop_time_updates that is used for the metrics computation
-    stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
-    trips: Dict[TripStopIdentifier, list[tuple[TripUpdate, StopTimeUpdate]]] = defaultdict(list)
 
-    for stop_time_update, trip_update in trip_stop_time_updates:
+    for stop_time_update, trip_update in query:
         stop_time_updates.append((trip_update, stop_time_update))
 
         trip_stop_identifier = TripStopIdentifier(
@@ -56,6 +62,7 @@ def run_stop_time_analysis():
 
         trips[trip_stop_identifier].append((trip_update, stop_time_update))
 
+        # Skip uncertain arrivals
         if stop_time_update.arrival_uncertainty > 0:
             continue
 
