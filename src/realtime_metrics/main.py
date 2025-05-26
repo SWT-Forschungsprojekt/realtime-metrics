@@ -23,7 +23,6 @@ def run_stop_time_analysis():
     - prediction inconsistency (defined here: https://docs.google.com/document/d/1-AOtPaEViMcY6B5uTAYj7oVkwry3LfAQJg3ihSRTVoU/edit#heading=h.uzxz2nt2mgh0)
     """
     
-    stop_time_updates: list[tuple[TripUpdate, StopTimeUpdate]] = []
     trips: dict = defaultdict(list)
 
     # Stream StopTimeUpdate + TripUpdate pairs from DB in chunks
@@ -51,7 +50,6 @@ def run_stop_time_analysis():
 
 
     for stop_time_update, trip_update in query:
-        stop_time_updates.append((trip_update, stop_time_update))
 
         trip_stop_identifier = TripStopIdentifier(
             trip_update.trip_start_date,
@@ -75,7 +73,7 @@ def run_stop_time_analysis():
     # MSE accuracy ------------------------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing MSE accuracy ...")
-    mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
+    mse_accuracy_result = mse_accuracy(stop_time_updates=trips.values())
     if mse_accuracy_result is None:
         print("MSE accuracy could not be computed, no data provided!")
     else:
@@ -84,7 +82,7 @@ def run_stop_time_analysis():
     # ETA accuracy ------------------------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing ETA accuracy ...")
-    eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
+    eta_accuracy_result = eta_accuracy(stop_time_updates=trips.values())
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
     else:
@@ -93,7 +91,7 @@ def run_stop_time_analysis():
     # experienced wait time delay ---------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing experienced wait time delay ...")
-    experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
+    experienced_wait_time_delay_result = experienced_wait_time_delay(trips.values())
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
     else:
