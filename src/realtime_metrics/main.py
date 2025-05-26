@@ -4,11 +4,12 @@ from optparse import OptionParser
 from typing import Dict
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+from itertools import chain
 
 from gtfsrdb.model import Base, TripUpdate, StopTimeUpdate, VehiclePosition
 from sqlalchemy import create_engine, inspect, func
 from realtime_metrics.trip_stop_identifier import TripStopIdentifier
-from sqlalchemy.orm import sessionmaker, Load
+from sqlalchemy.orm import sessionmaker
 
 import numpy
 
@@ -28,18 +29,6 @@ def run_stop_time_analysis():
     # Stream StopTimeUpdate + TripUpdate pairs from DB in chunks
     query = session.query(StopTimeUpdate, TripUpdate).join(
     TripUpdate, StopTimeUpdate.trip_update_id == TripUpdate.oid
-    ).options(
-        Load(TripUpdate).load_only(
-            TripUpdate.trip_id,
-            TripUpdate.route_id,
-            TripUpdate.trip_start_date,
-            TripUpdate.timestamp
-        ),
-        Load(StopTimeUpdate).load_only(
-            StopTimeUpdate.stop_id,
-            StopTimeUpdate.arrival_time,
-            StopTimeUpdate.arrival_uncertainty
-        )
     ).filter(
         StopTimeUpdate.arrival_time > 0
     ).order_by(
@@ -70,10 +59,12 @@ def run_stop_time_analysis():
         if not current or timestamp > current[0]:
             actual_arrival_times[trip_stop_identifier] = (timestamp, stop_time_update)
 
+    stop_time_updates = list(chain.from_iterable(trips.values()))
+
     # MSE accuracy ------------------------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing MSE accuracy ...")
-    mse_accuracy_result = mse_accuracy(stop_time_updates=trips.values())
+    mse_accuracy_result = mse_accuracy(stop_time_updates=stop_time_updates)
     if mse_accuracy_result is None:
         print("MSE accuracy could not be computed, no data provided!")
     else:
@@ -82,7 +73,7 @@ def run_stop_time_analysis():
     # ETA accuracy ------------------------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing ETA accuracy ...")
-    eta_accuracy_result = eta_accuracy(stop_time_updates=trips.values())
+    eta_accuracy_result = eta_accuracy(stop_time_updates=stop_time_updates)
     if eta_accuracy_result is None:
         print("ETA accuracy could not be computed, no data provided!")
     else:
@@ -91,7 +82,7 @@ def run_stop_time_analysis():
     # experienced wait time delay ---------------------------------------------------------------------------------------------------
     print("---------------------------------------------------------------------------")
     print("Computing experienced wait time delay ...")
-    experienced_wait_time_delay_result = experienced_wait_time_delay(trips.values())
+    experienced_wait_time_delay_result = experienced_wait_time_delay(stop_time_updates)
     if experienced_wait_time_delay_result is None:
         print("Experienced Wait Time Delay could not be computed, no data provided!")
     else:
