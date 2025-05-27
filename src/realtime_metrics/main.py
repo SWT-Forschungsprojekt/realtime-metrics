@@ -606,7 +606,7 @@ def get_next_actual_arrival(timestamp: int, route_id: str, stop_id: str) -> Stop
         
     return min(actual_arrivals, key=lambda update: update.arrival_time)
 
-@lru_cache(maxsize=1000)
+@lru_cache(maxsize=4000)
 def get_trip_stop_identifier(route_id: int, stop_id: int) -> list[StopTimeUpdate]:
     stop_time_updates: list[StopTimeUpdate] = []
     for trip_stop_identifier, update in actual_arrival_times.items():
